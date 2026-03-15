@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
-from app.models.models import Site, Employee
+from app.models.models import Site, Employee, User
 from app.schemas.schemas import SiteCreate, SiteRead
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/sites", tags=["Sites"])
 
@@ -29,7 +30,7 @@ async def _enrich_site(site: Site, db: AsyncSession) -> SiteRead:
 
 
 @router.post("/", response_model=SiteRead, status_code=status.HTTP_201_CREATED)
-async def create_site(payload: SiteCreate, db: AsyncSession = Depends(get_db)):
+async def create_site(payload: SiteCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     site = Site(**payload.model_dump())
     db.add(site)
     await db.commit()
@@ -38,13 +39,20 @@ async def create_site(payload: SiteCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/", response_model=List[SiteRead])
-async def list_sites(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Site))
+async def list_sites(
+    employer_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = select(Site)
+    if employer_id is not None:
+        q = q.where(Site.employer_id == employer_id)
+    result = await db.execute(q)
     return [await _enrich_site(s, db) for s in result.scalars().all()]
 
 
 @router.get("/{site_id}", response_model=SiteRead)
-async def get_site(site_id: int, db: AsyncSession = Depends(get_db)):
+async def get_site(site_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Site).where(Site.id == site_id))
     site = result.scalar_one_or_none()
     if not site:

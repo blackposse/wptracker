@@ -1,30 +1,96 @@
 import { useState, useEffect, useCallback } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
-const API = "http://localhost:8001";
+const API = import.meta.env.VITE_API_URL ?? "/api";
+
+// ── Auth helpers ───────────────────────────────────────────
+function getToken() { return localStorage.getItem("wp_token"); }
+function clearToken() { localStorage.removeItem("wp_token"); }
+function saveToken(t) { localStorage.setItem("wp_token", t); }
+
+// Module-level unauth callback — set by App component
+let _onUnauth = null;
+
+async function apiFetch(url, options = {}) {
+  const token = getToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && _onUnauth) _onUnauth();
+  return res;
+}
 
 const C = {
-  bg:           "#f8fafc",
+  bg:           "#ffffff",
   pageBg:       "#f1f5f9",
   cardBg:       "#ffffff",
   border:       "#e2e8f0",
   borderLight:  "#f1f5f9",
   text:         "#0f172a",
-  textSub:      "#475569",
+  textSub:      "#64748b",
   textMuted:    "#94a3b8",
   accent:       "#dc2626",
-  accentBg:     "rgba(220, 38, 38, 0.07)",
-  accentBorder: "rgba(220, 38, 38, 0.25)",
-  tabActiveBg:  "#fff5f5",
+  accentBg:     "rgba(220, 38, 38, 0.06)",
+  accentBorder: "rgba(220, 38, 38, 0.2)",
   rowHover:     "#f8fafc",
   inputBg:      "#f8fafc",
+  sans:         "'Inter', system-ui, -apple-system, sans-serif",
+  mono:         "'JetBrains Mono', 'DM Mono', ui-monospace, monospace",
 };
 
 const STATUS_CONFIG = {
   Valid:    { color: "#16a34a", bg: "#f0fdf4", label: "VALID",    icon: "✓" },
   Warning:  { color: "#d97706", bg: "#fffbeb", label: "WARNING",  icon: "⚠" },
-  Critical: { color: "#dc2626", bg: "#fef2f2", label: "CRITICAL", icon: "✕" },
-  Expired:  { color: "#9ca3af", bg: "#f3f4f6", label: "EXPIRED",  icon: "✗" },
+  Critical: { color: "#dc2626", bg: "#fef2f2", label: "EXPIRING", icon: "!" },
+  Expired:  { color: "#6b7280", bg: "#f9fafb", label: "EXPIRED",  icon: "✗" },
 };
+
+function daysColor(days) {
+  if (days < 0)  return "#6b7280";
+  if (days < 15) return "#dc2626";
+  if (days < 30) return "#ea580c";
+  if (days < 60) return "#d97706";
+  return "#16a34a";
+}
+
+const NATIONALITIES = [
+  "Afghan","Albanian","Algerian","American","Argentinian","Australian","Austrian","Bahraini",
+  "Bangladeshi","Belgian","Brazilian","British","Bulgarian","Cambodian","Canadian","Chilean",
+  "Chinese","Colombian","Croatian","Cuban","Czech","Danish","Dutch","Egyptian","Ethiopian",
+  "Filipino","Finnish","French","German","Ghanaian","Greek","Hungarian","Indian","Indonesian",
+  "Iranian","Iraqi","Irish","Italian","Ivorian","Jamaican","Japanese","Jordanian","Kenyan",
+  "Korean","Kuwaiti","Lebanese","Libyan","Malaysian","Maldivian","Mauritanian","Mexican",
+  "Moroccan","Mozambican","Myanmar","Namibian","Nepalese","New Zealander","Nigerian","Norwegian",
+  "Omani","Pakistani","Palestinian","Peruvian","Polish","Portuguese","Qatari","Romanian",
+  "Russian","Rwandan","Saudi","Senegalese","Serbian","Singaporean","Somali","South African",
+  "Spanish","Sri Lankan","Sudanese","Swedish","Swiss","Syrian","Taiwanese","Tanzanian",
+  "Thai","Tunisian","Turkish","Ugandan","Ukrainian","Emirati","Uruguayan","Venezuelan",
+  "Vietnamese","Yemeni","Zambian","Zimbabwean"
+];
+
+function addMonths(fromDateStr, months) {
+  const base = fromDateStr ? new Date(fromDateStr) : new Date();
+  if (base < new Date()) { base.setTime(new Date().getTime()); }
+  base.setMonth(base.getMonth() + months);
+  return base.toISOString().split("T")[0];
+}
+function addYears(fromDateStr, years) {
+  const base = fromDateStr ? new Date(fromDateStr) : new Date();
+  if (base < new Date()) { base.setTime(new Date().getTime()); }
+  base.setFullYear(base.getFullYear() + years);
+  return base.toISOString().split("T")[0];
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return "—";
+  const d = new Date(isoStr);
+  return d.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
 
 const useFetch = (url) => {
   const [data, setData] = useState(null);
@@ -32,297 +98,1162 @@ const useFetch = (url) => {
   const [error, setError] = useState(null);
   const refetch = useCallback(() => {
     setLoading(true);
-    fetch(url)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
+    apiFetch(url)
+      .then(r => r.status === 401 ? null : r.json())
+      .then(d => { if (d !== null) { setData(d); setLoading(false); } })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [url]);
   useEffect(() => { refetch(); }, [refetch]);
   return { data, loading, error, refetch };
 };
 
+// ── Badge ─────────────────────────────────────────────────
 const Badge = ({ status }) => {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.Valid;
   return (
     <span style={{
       background: cfg.bg, color: cfg.color,
-      border: `1px solid ${cfg.color}40`,
-      padding: "2px 8px", borderRadius: 3,
-      fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",
-      fontFamily: "monospace", whiteSpace: "nowrap",
+      border: `1px solid ${cfg.color}22`,
+      padding: "3px 10px", borderRadius: 20,
+      fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
+      fontFamily: C.sans, whiteSpace: "nowrap",
+      display: "inline-flex", alignItems: "center", gap: 4,
     }}>{cfg.icon} {cfg.label}</span>
   );
 };
 
-const StatCard = ({ label, value, sub, accent }) => (
+// ── Stat Card ─────────────────────────────────────────────
+const StatCard = ({ label, value, sub, accent, glow }) => (
   <div style={{
-    background: C.cardBg, border: `1px solid ${C.border}`,
-    padding: "20px 24px", borderRadius: 8,
-    borderLeft: `3px solid ${accent || C.border}`,
-    flex: 1, minWidth: 160,
-    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+    background: C.cardBg,
+    border: `1px solid ${C.border}`,
+    borderRadius: 14,
+    padding: "22px 24px 18px",
+    flex: 1, minWidth: 150,
+    position: "relative", overflow: "hidden",
+    boxShadow: glow && value > 0
+      ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
+      : "0 1px 4px rgba(0,0,0,0.04)",
+    transition: "box-shadow 0.2s",
   }}>
-    <div style={{ color: C.textMuted, fontSize: 10, letterSpacing: "0.12em", fontFamily: "monospace", marginBottom: 8 }}>{label}</div>
-    <div style={{ color: C.text, fontSize: 32, fontWeight: 800, lineHeight: 1, fontFamily: "'DM Mono', monospace" }}>{value ?? "—"}</div>
-    {sub && <div style={{ color: C.textMuted, fontSize: 11, marginTop: 6 }}>{sub}</div>}
+    <div style={{
+      position: "absolute", top: 0, left: 0, right: 0, height: 3,
+      background: `linear-gradient(90deg, ${accent || C.border}, ${accent ? accent + "50" : C.border})`,
+    }} />
+    <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.sans }}>{label}</div>
+    <div style={{ color: glow && value > 0 ? accent : C.text, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono }}>{value ?? "—"}</div>
+    {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 8, fontFamily: C.sans }}>{sub}</div>}
   </div>
 );
 
+// ── Tabs ──────────────────────────────────────────────────
 const Tabs = ({ tabs, active, onChange }) => (
-  <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${C.border}`, marginBottom: 24 }}>
+  <div style={{
+    display: "flex", gap: 2,
+    background: C.border,
+    padding: 3, borderRadius: 12,
+    width: "fit-content", marginBottom: 28,
+    boxShadow: "inset 0 1px 3px rgba(0,0,0,0.06)",
+  }}>
     {tabs.map(t => (
       <button key={t} onClick={() => onChange(t)} style={{
-        background: active === t ? C.tabActiveBg : "transparent",
-        color: active === t ? C.accent : C.textMuted,
+        background: active === t ? C.bg : "transparent",
+        color: active === t ? C.text : C.textSub,
         border: "none",
-        borderBottom: active === t ? `2px solid ${C.accent}` : "2px solid transparent",
-        padding: "10px 20px", cursor: "pointer",
-        fontFamily: "'DM Mono', monospace", fontSize: 12,
-        letterSpacing: "0.08em", fontWeight: active === t ? 700 : 400,
+        padding: "8px 20px", cursor: "pointer",
+        borderRadius: 9,
+        fontFamily: C.sans, fontSize: 13,
+        fontWeight: active === t ? 600 : 400,
+        boxShadow: active === t ? "0 1px 6px rgba(0,0,0,0.1)" : "none",
         transition: "all 0.15s",
+        letterSpacing: "0.01em",
       }}>{t}</button>
     ))}
   </div>
 );
 
-const Modal = ({ title, onClose, children }) => (
+// ── Modal ─────────────────────────────────────────────────
+const Modal = ({ title, onClose, children, wide }) => (
   <div style={{
-    position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)",
+    position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-    backdropFilter: "blur(2px)",
+    backdropFilter: "blur(4px)",
   }} onClick={onClose}>
     <div style={{
-      background: C.cardBg, border: `1px solid ${C.border}`,
-      borderRadius: 10, padding: 32, minWidth: 480, maxWidth: 560,
+      background: C.cardBg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 16, padding: 32,
+      minWidth: wide ? 660 : 500, maxWidth: wide ? 740 : 580,
       maxHeight: "90vh", overflowY: "auto",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.12)",
+      boxShadow: "0 24px 64px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.06)",
     }} onClick={e => e.stopPropagation()}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h3 style={{ color: C.text, margin: 0, fontSize: 16, fontFamily: "monospace" }}>{title}</h3>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 20, cursor: "pointer" }}>×</button>
+        <h3 style={{ color: C.text, margin: 0, fontSize: 16, fontFamily: C.sans, fontWeight: 700 }}>{title}</h3>
+        <button onClick={onClose} style={{
+          background: C.pageBg, border: `1px solid ${C.border}`,
+          color: C.textMuted, width: 32, height: 32, borderRadius: 8,
+          cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+          lineHeight: 1,
+        }}>×</button>
       </div>
       {children}
     </div>
   </div>
 );
 
-const InputRow = ({ label, name, type = "text", value, onChange, required }) => (
-  <div style={{ marginBottom: 14 }}>
-    <label style={{ display: "block", color: C.textSub, fontSize: 11, letterSpacing: "0.08em", fontFamily: "monospace", marginBottom: 4 }}>
-      {label}{required && <span style={{ color: C.accent }}> *</span>}
-    </label>
-    <input type={type} name={name} value={value} onChange={onChange} required={required}
-      style={{
-        width: "100%", background: C.inputBg, border: `1px solid ${C.border}`,
-        color: C.text, padding: "8px 12px", borderRadius: 4,
-        fontFamily: "monospace", fontSize: 13, boxSizing: "border-box", outline: "none",
-      }} />
+// ── Input helpers ─────────────────────────────────────────
+const inputStyle = (readOnly) => ({
+  width: "100%", background: readOnly ? C.pageBg : C.cardBg,
+  border: `1px solid ${C.border}`,
+  color: readOnly ? C.textSub : C.text,
+  padding: "9px 12px", borderRadius: 8,
+  fontFamily: C.mono, fontSize: 13, boxSizing: "border-box", outline: "none",
+  cursor: readOnly ? "default" : "text",
+  transition: "border-color 0.15s",
+});
+
+const labelStyle = {
+  display: "block", color: C.textSub, fontSize: 11,
+  fontWeight: 500, letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 5,
+  textTransform: "uppercase",
+};
+
+const InputRow = ({ label, name, type = "text", value, onChange, required, readOnly }) => (
+  <div style={{ marginBottom: 16 }}>
+    <label style={labelStyle}>{label}{required && <span style={{ color: C.accent }}> *</span>}</label>
+    <input type={type} name={name} value={value} onChange={onChange} required={required} readOnly={readOnly}
+      style={inputStyle(readOnly)} />
   </div>
 );
 
 const SelectRow = ({ label, name, value, onChange, options, required }) => (
-  <div style={{ marginBottom: 14 }}>
-    <label style={{ display: "block", color: C.textSub, fontSize: 11, letterSpacing: "0.08em", fontFamily: "monospace", marginBottom: 4 }}>
-      {label}{required && <span style={{ color: C.accent }}> *</span>}
-    </label>
+  <div style={{ marginBottom: 16 }}>
+    <label style={labelStyle}>{label}{required && <span style={{ color: C.accent }}> *</span>}</label>
     <select name={name} value={value} onChange={onChange} required={required}
-      style={{
-        width: "100%", background: C.inputBg, border: `1px solid ${C.border}`,
-        color: C.text, padding: "8px 12px", borderRadius: 4,
-        fontFamily: "monospace", fontSize: 13, boxSizing: "border-box",
-      }}>
+      style={{ ...inputStyle(false), appearance: "none", cursor: "pointer" }}>
       <option value="">— Select —</option>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   </div>
 );
 
-// ── Site Card (reusable) ──────────────────────────────────────────
-const SiteCard = ({ site }) => {
-  const pct = site.quota_utilisation_pct;
-  const atCapacity = site.available_slots === 0;
+// ── Extend field with period quick-buttons ────────────────
+// unit: "months" (1M 2M 3M 6M 12M) | "years" (1Y 2Y)
+const ExtendField = ({ label, name, value, onChange, unit, required }) => {
+  const options = unit === "months" ? [1, 2, 3, 6, 12] : [1, 2];
+  const extend = (n) => {
+    const newVal = unit === "months" ? addMonths(value, n) : addYears(value, n);
+    onChange({ target: { name, value: newVal } });
+  };
   return (
-    <div style={{
-      background: C.pageBg, border: `1px solid ${atCapacity ? "#fca5a5" : C.border}`,
-      borderRadius: 6, padding: "12px 16px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <div style={{ color: C.text, fontFamily: "monospace", fontSize: 13, fontWeight: 600, flex: 1 }}>{site.site_name}</div>
-        {atCapacity && (
-          <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "1px 8px", borderRadius: 3, fontSize: 10, fontFamily: "monospace", fontWeight: 700 }}>QUOTA FULL</span>
-        )}
-        <span style={{ color: C.textSub, fontFamily: "monospace", fontSize: 12 }}>{site.used_slots} / {site.total_quota_slots} slots</span>
+    <div style={{ marginBottom: 16 }}>
+      <label style={labelStyle}>{label}{required && <span style={{ color: C.accent }}> *</span>}</label>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input type="date" name={name} value={value} onChange={onChange}
+          style={{ ...inputStyle(false), flex: 1 }} />
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          {options.map(n => (
+            <button key={n} type="button" onClick={() => extend(n)} style={{
+              background: C.accentBg, color: C.accent, border: `1px solid ${C.accentBorder}`,
+              padding: "8px 9px", borderRadius: 7, cursor: "pointer",
+              fontFamily: C.sans, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+            }}>+{n}{unit === "months" ? "M" : "Y"}</button>
+          ))}
+        </div>
       </div>
-      <div style={{ background: C.border, borderRadius: 2, height: 5, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: pct >= 100 ? "#dc2626" : pct >= 80 ? "#d97706" : "#16a34a", transition: "width 0.5s", borderRadius: 2 }} />
-      </div>
-      <div style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace", marginTop: 5 }}>{pct}% utilisation · {site.available_slots} slots available</div>
     </div>
   );
 };
 
-// ── Dashboard Overview ────────────────────────────────────────────
-const DashboardTab = () => {
-  const { data: stats } = useFetch(`${API}/dashboard/stats`);
-  const { data: alertData } = useFetch(`${API}/alerts/expiring?days=60`);
+// ── Employee Detail / Edit Modal ──────────────────────────
+const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDeleted }) => {
+  const [mode, setMode] = useState("VIEW");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [form, setForm] = useState({
+    full_name:              emp.full_name || "",
+    passport_number:        emp.passport_number || "",
+    nationality:            emp.nationality || "",
+    job_title:              emp.job_title || "",
+    passport_expiry:        emp.passport_expiry || "",
+    visa_stamp_expiry:      emp.visa_stamp_expiry || "",
+    insurance_expiry:       emp.insurance_expiry || "",
+    work_permit_fee_expiry: emp.work_permit_fee_expiry || "",
+    medical_expiry:         emp.medical_expiry || "",
+    note:                   "",
+  });
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [resignSaving, setResignSaving] = useState(false);
+  const [logs, setLogs] = useState(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [renewMode, setRenewMode] = useState(false);
+  const [renewForm, setRenewForm] = useState({ passport_number: emp.passport_number || "", passport_expiry: emp.passport_expiry || "", note: "Passport Renewal" });
+  const [renewSaving, setRenewSaving] = useState(false);
+  const [renewError, setRenewError] = useState(null);
 
-  // Group alerts by employer
+  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+
+  const handleModeChange = async (newMode) => {
+    setMode(newMode);
+    if (newMode === "HISTORY" && logs === null) {
+      setLogsLoading(true);
+      try {
+        const res = await apiFetch(`${API}/employees/${emp.id}/logs`);
+        const data = await res.json();
+        setLogs(Array.isArray(data) ? data : []);
+      } catch {
+        setLogs([]);
+      } finally {
+        setLogsLoading(false);
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    setError(null); setSaving(true);
+    const payload = { ...form };
+    ["passport_expiry","visa_stamp_expiry","insurance_expiry","work_permit_fee_expiry","medical_expiry"].forEach(f => {
+      if (payload[f] === "") payload[f] = null;
+    });
+    if (payload.passport_number === "") payload.passport_number = null;
+    if (!payload.note) delete payload.note;
+    const doFetch = () => apiFetch(`${API}/employees/${emp.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    try {
+      let res;
+      try { res = await doFetch(); }
+      catch { res = await doFetch(); } // retry once on network failure
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail?.message || data.detail || "Error updating employee");
+      } else {
+        onUpdated(data);
+        setMode("VIEW");
+        setLogs(null);
+      }
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    const res = await apiFetch(`${API}/employees/${emp.id}`, { method: "DELETE" });
+    if (res.ok) { onDeleted(emp.id); }
+    else { const d = await res.json().catch(() => ({})); setError(d.detail || "Error deleting employee"); }
+  };
+
+  const handleToggleResigned = async () => {
+    setResignSaving(true); setError(null);
+    try {
+      const res = await apiFetch(`${API}/employees/${emp.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resigned: !emp.resigned }),
+      });
+      const data = await res.json();
+      if (!res.ok) setError(data.detail?.message || data.detail || "Error updating employee");
+      else onUpdated(data);
+    } catch (e) { setError(e.message); }
+    finally { setResignSaving(false); }
+  };
+
+  const handleRenew = async () => {
+    setRenewError(null); setRenewSaving(true);
+    const payload = { passport_number: renewForm.passport_number || null, passport_expiry: renewForm.passport_expiry || null, note: renewForm.note || "Passport Renewal" };
+    if (!payload.passport_expiry) payload.passport_expiry = null;
+    try {
+      const res = await apiFetch(`${API}/employees/${emp.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRenewError(data.detail?.message || data.detail || "Error saving"); }
+      else { onUpdated(data); setRenewMode(false); setLogs(null); }
+    } catch (e) { setRenewError(e.message); }
+    finally { setRenewSaving(false); }
+  };
+
+  const employerName = (employers || []).find(e => e.id === emp.employer_id)?.name || `Employer #${emp.employer_id}`;
+  const siteName     = (sites || []).find(s => s.id === emp.site_id)?.site_name || `Site #${emp.site_id}`;
+
+  const docRows = [
+    { label: "Passport",        name: "passport_expiry",        status: emp.passport_status },
+    { label: "Visa Stamp",      name: "visa_stamp_expiry",      status: emp.visa_stamp_status },
+    { label: "Insurance",       name: "insurance_expiry",       status: emp.insurance_status },
+    { label: "Work Permit Fee", name: "work_permit_fee_expiry", status: emp.work_permit_fee_status },
+    { label: "Medical",         name: "medical_expiry",         status: emp.medical_status },
+  ];
+
+  const modalTitle = mode === "EDIT"
+    ? `Edit — ${emp.full_name}`
+    : mode === "HISTORY"
+    ? `History — ${emp.full_name}`
+    : emp.full_name;
+
+  return (
+    <Modal wide title={modalTitle} onClose={onClose}>
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Resigned banner */}
+      {emp.resigned && (
+        <div style={{ background: "#f9fafb", border: "1px solid #d1d5db", color: "#6b7280", padding: "8px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16 }}>🚪</span> This employee has been marked as resigned.
+        </div>
+      )}
+
+      {/* Mode tab bar */}
+      <div style={{ display: "flex", gap: 1, background: C.borderLight, padding: 3, borderRadius: 10, width: "fit-content", marginBottom: 24 }}>
+        {["VIEW", "EDIT", "HISTORY"].map(m => (
+          <button key={m} onClick={() => handleModeChange(m)} style={{
+            background: mode === m ? C.bg : "transparent",
+            color: mode === m ? C.text : C.textSub,
+            border: "none", padding: "6px 16px", cursor: "pointer",
+            borderRadius: 8, fontFamily: C.sans, fontSize: 12,
+            fontWeight: mode === m ? 600 : 400,
+            boxShadow: mode === m ? "0 1px 4px rgba(0,0,0,0.1)" : "none",
+            transition: "all 0.15s",
+          }}>{m}</button>
+        ))}
+      </div>
+
+      {mode === "VIEW" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px", marginBottom: 20 }}>
+            {[
+              ["Emp No.",        emp.employee_number],
+              ["Passport No.",   emp.passport_number || "—"],
+              ["Employer",       employerName],
+              ["Site",           siteName],
+              ["Nationality",    emp.nationality || "—"],
+              ["Job Title",      emp.job_title || "—"],
+            ].map(([lbl, val]) => (
+              <div key={lbl} style={{ marginBottom: 14 }}>
+                <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 3 }}>{lbl}</div>
+                <div style={{ color: C.text, fontFamily: C.mono, fontSize: 13 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18, marginBottom: 20 }}>
+            <div style={{ color: C.textSub, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 14 }}>Document Status</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {docRows.map(({ label, name, status }) => {
+                const cfg = STATUS_CONFIG[status?.status] || null;
+                return (
+                  <div key={name} style={{
+                    background: cfg ? cfg.bg : C.pageBg,
+                    border: `1px solid ${cfg ? `${cfg.color}20` : C.border}`,
+                    borderRadius: 10, padding: "12px 14px",
+                    borderTop: `3px solid ${cfg ? cfg.color : C.border}`,
+                  }}>
+                    <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", fontFamily: C.sans, marginBottom: 6 }}>{label}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: C.text, fontFamily: C.mono, fontSize: 12, flex: 1 }}>
+                        {status?.date || "Not set"}
+                      </span>
+                      {status?.status && <Badge status={status.status} />}
+                    </div>
+                    {status?.days_remaining !== undefined && status?.days_remaining !== null && (
+                      <div style={{ color: cfg?.color || C.textMuted, fontSize: 11, fontFamily: C.mono, marginTop: 5, fontWeight: 600 }}>
+                        {status.days_remaining < 0
+                          ? `Expired ${Math.abs(status.days_remaining)}d ago`
+                          : `${status.days_remaining}d remaining`}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Passport Renewal Panel */}
+          {renewMode && (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "16px 18px", marginBottom: 18 }}>
+              <div style={{ color: "#1d4ed8", fontFamily: C.sans, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>🔄 Renew Passport</div>
+              {renewError && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "8px 12px", borderRadius: 7, fontSize: 12, fontFamily: C.sans, marginBottom: 12 }}>⚠ {renewError}</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 14px" }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ ...labelStyle, color: "#1d4ed8" }}>New Passport No.</label>
+                  <input value={renewForm.passport_number} onChange={e => setRenewForm(f => ({ ...f, passport_number: e.target.value }))}
+                    placeholder="e.g. B98765432"
+                    style={{ ...inputStyle(false), borderColor: "#bfdbfe", background: "#fff" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ ...labelStyle, color: "#1d4ed8" }}>New Expiry Date</label>
+                  <input type="date" value={renewForm.passport_expiry} onChange={e => setRenewForm(f => ({ ...f, passport_expiry: e.target.value }))}
+                    style={{ ...inputStyle(false), borderColor: "#bfdbfe", background: "#fff" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ ...labelStyle, color: "#1d4ed8" }}>Note</label>
+                  <input value={renewForm.note} onChange={e => setRenewForm(f => ({ ...f, note: e.target.value }))}
+                    style={{ ...inputStyle(false), borderColor: "#bfdbfe", background: "#fff" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={() => { setRenewMode(false); setRenewError(null); }} style={{ background: "#fff", color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+                <button onClick={handleRenew} disabled={renewSaving} style={{ background: "#1d4ed8", color: "#fff", border: "none", padding: "7px 20px", borderRadius: 8, cursor: renewSaving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: renewSaving ? 0.7 : 1 }}>
+                  {renewSaving ? "Saving..." : "Save Renewal"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {!confirmDelete ? (
+                <button onClick={() => setConfirmDelete(true)} style={{ background: "none", color: "#dc2626", border: "1px solid #fecaca", padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>
+                  Delete
+                </button>
+              ) : (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>Are you sure?</span>
+                  <button onClick={handleDelete} style={{ background: "#dc2626", color: "#fff", border: "none", padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>Yes, Delete</button>
+                  <button onClick={() => setConfirmDelete(false)} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+                </div>
+              )}
+              <button
+                onClick={handleToggleResigned}
+                disabled={resignSaving}
+                style={{
+                  background: emp.resigned ? "#f0fdf4" : "#f9fafb",
+                  color: emp.resigned ? "#16a34a" : "#6b7280",
+                  border: `1px solid ${emp.resigned ? "#bbf7d0" : "#d1d5db"}`,
+                  padding: "7px 16px", borderRadius: 8, cursor: resignSaving ? "not-allowed" : "pointer",
+                  fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: resignSaving ? 0.7 : 1,
+                }}>
+                {resignSaving ? "Saving..." : emp.resigned ? "✓ Reactivate Employee" : "Mark as Resigned"}
+              </button>
+              <button
+                onClick={() => { setRenewMode(r => !r); setRenewError(null); setRenewForm({ passport_number: emp.passport_number || "", passport_expiry: emp.passport_expiry || "", note: "Passport Renewal" }); }}
+                style={{ background: renewMode ? "#eff6ff" : "#f8fafc", color: renewMode ? "#1d4ed8" : C.textSub, border: `1px solid ${renewMode ? "#bfdbfe" : C.border}`, padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>
+                🔄 Renew Passport
+              </button>
+            </div>
+            <button onClick={() => handleModeChange("EDIT")} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+              Edit
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "EDIT" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginBottom: 4 }}>
+            <InputRow label="Emp No." name="_empno" value={emp.employee_number} onChange={() => {}} readOnly />
+            <InputRow label="Employer" name="_employer" value={employerName} onChange={() => {}} readOnly />
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, marginBottom: 16 }} />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <InputRow label="Full Name" name="full_name" value={form.full_name} onChange={handleChange} required />
+            <InputRow label="Passport No." name="passport_number" value={form.passport_number} onChange={handleChange} placeholder="e.g. A12345678" />
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Nationality</label>
+              <select name="nationality" value={form.nationality} onChange={handleChange}
+                style={{ ...inputStyle(false), appearance: "none", cursor: "pointer" }}>
+                <option value="">— Select —</option>
+                {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <InputRow label="Job Title" name="job_title" value={form.job_title} onChange={handleChange} />
+            <InputRow label="Passport Expiry" name="passport_expiry" type="date" value={form.passport_expiry} onChange={handleChange} />
+            <ExtendField label="Visa Stamp Expiry"  name="visa_stamp_expiry"  value={form.visa_stamp_expiry}  onChange={handleChange} unit="years" />
+            <ExtendField label="Insurance Expiry"   name="insurance_expiry"   value={form.insurance_expiry}   onChange={handleChange} unit="years" />
+            <ExtendField label="Work Permit Fee Expiry" name="work_permit_fee_expiry" value={form.work_permit_fee_expiry} onChange={handleChange} unit="months" />
+            <ExtendField label="Medical Expiry"     name="medical_expiry"     value={form.medical_expiry}     onChange={handleChange} unit="years" />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Note <span style={{ color: C.textMuted, textTransform: "none", fontWeight: 400 }}>(optional — saved to audit log)</span></label>
+            <input type="text" name="note" value={form.note} onChange={handleChange}
+              placeholder="e.g. Renewed at immigration office"
+              style={inputStyle(false)} />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+            <button onClick={() => { setMode("VIEW"); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: saving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "HISTORY" && (
+        <div>
+          {logsLoading ? (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: "32px 0", textAlign: "center" }}>Loading history...</div>
+          ) : logs && logs.length === 0 ? (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: "32px 0", textAlign: "center" }}>No history recorded yet.</div>
+          ) : (() => {
+            // Group entries that share the same timestamp (same operation/save)
+            const groups = [];
+            (logs || []).forEach(log => {
+              const tsKey = (log.changed_at || "").substring(0, 19);
+              const last = groups[groups.length - 1];
+              if (last && last.tsKey === tsKey) { last.entries.push(log); }
+              else { groups.push({ tsKey, entries: [log] }); }
+            });
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {groups.map((group, gi) => {
+                  const first = group.entries[0];
+                  const note = first.note;
+                  const isRenewal = note && note.toLowerCase().includes("passport renewal");
+                  const accentColor = isRenewal ? "#1d4ed8" : C.accent;
+                  const bg = isRenewal ? "#eff6ff" : C.pageBg;
+                  const borderColor = isRenewal ? "#bfdbfe" : C.border;
+                  return (
+                    <div key={gi} style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 10, padding: "12px 16px", borderLeft: `3px solid ${accentColor}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {isRenewal && <span style={{ background: "#1d4ed8", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, fontFamily: C.sans, letterSpacing: "0.04em" }}>PASSPORT RENEWAL</span>}
+                          {!isRenewal && group.entries.length > 1 && <span style={{ background: C.border, color: C.textSub, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, fontFamily: C.sans }}>{group.entries.length} changes</span>}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                          <span style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11 }}>{formatDateTime(first.changed_at)}</span>
+                          {first.changed_by && <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 10 }}>by {first.changed_by}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {group.entries.map((log, li) => (
+                          <div key={log.id || li}>
+                            <div style={{ color: accentColor, fontFamily: C.sans, fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{log.field_name}</div>
+                            <div style={{ fontFamily: C.mono, fontSize: 12 }}>
+                              <span style={{ color: C.textSub }}>{log.old_value ?? "—"}</span>
+                              <span style={{ color: C.textMuted, margin: "0 10px" }}>→</span>
+                              <span style={{ color: C.text, fontWeight: 600 }}>{log.new_value ?? "—"}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {note && <div style={{ color: isRenewal ? "#1d4ed8" : C.textSub, fontFamily: C.sans, fontSize: 12, fontStyle: "italic", marginTop: 8 }}>"{note}"</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+// ── Site Card ─────────────────────────────────────────────
+const SiteCard = ({ site, onViewEmployees }) => {
+  const pct = site.quota_utilisation_pct;
+  const atCapacity = site.available_slots === 0;
+  const barColor = pct >= 100 ? "#dc2626" : pct >= 80 ? "#d97706" : "#16a34a";
+  return (
+    <div style={{
+      background: C.bg, border: `1px solid ${atCapacity ? "#fca5a5" : C.border}`,
+      borderRadius: 10, padding: "14px 18px",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, flex: 1 }}>{site.site_name}</div>
+        {atCapacity && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>QUOTA FULL</span>}
+        <button
+          onClick={() => onViewEmployees && onViewEmployees(site)}
+          style={{
+            background: C.pageBg, color: C.textSub,
+            border: `1px solid ${C.border}`,
+            padding: "3px 12px", borderRadius: 20, cursor: "pointer",
+            fontFamily: C.mono, fontSize: 12, fontWeight: 600,
+          }}
+          title="View assigned employees">
+          {site.used_slots} / {site.total_quota_slots} slots
+        </button>
+      </div>
+      <div style={{ background: C.borderLight, borderRadius: 4, height: 6, overflow: "hidden", marginBottom: 6 }}>
+        <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: barColor, transition: "width 0.5s", borderRadius: 4 }} />
+      </div>
+      <div style={{ color: C.textMuted, fontSize: 11, fontFamily: C.sans }}>{pct}% utilisation · {site.available_slots} slots available</div>
+    </div>
+  );
+};
+
+// ── Days Pill ─────────────────────────────────────────────
+const DaysPill = ({ days }) => {
+  const color = daysColor(days);
+  const label = days < 0 ? `${Math.abs(days)}d ago` : `${days}d left`;
+  return (
+    <span style={{
+      background: `${color}12`, color, border: `1px solid ${color}35`,
+      padding: "3px 10px", borderRadius: 20, fontSize: 11,
+      fontFamily: C.mono, fontWeight: 700, whiteSpace: "nowrap",
+    }}>{label}</span>
+  );
+};
+
+// ── Category Section ──────────────────────────────────────
+const CATEGORY_META = {
+  "PASSPORTS":       { color: "#3b82f6", icon: "🛂" },
+  "WORK PERMIT FEE": { color: "#dc2626", icon: "📋" },
+  "INSURANCE":       { color: "#d97706", icon: "🛡" },
+  "VISA STAMP":      { color: "#a855f7", icon: "🔖" },
+  "MEDICAL":         { color: "#0891b2", icon: "🏥" },
+};
+
+const CategorySection = ({ title, alerts, onEmployeeClick }) => {
+  const storageKey = `cat_expanded_${title}`;
+  const [expanded, setExpanded] = useState(() => {
+    try { return localStorage.getItem(storageKey) !== "false"; } catch { return true; }
+  });
+  const toggle = () => setExpanded(e => {
+    const next = !e;
+    try { localStorage.setItem(storageKey, next); } catch {}
+    return next;
+  });
+
+  const count = alerts ? alerts.length : 0;
+  const expired  = (alerts || []).filter(a => a.status === "Expired").length;
+  const critical = (alerts || []).filter(a => a.status === "Critical").length;
+  const warning  = (alerts || []).filter(a => a.status === "Warning").length;
+  const hasUrgent = expired > 0 || critical > 0;
+  const meta = CATEGORY_META[title] || { color: C.textMuted, icon: "•" };
+
   const byEmployer = {};
-  (alertData?.alerts || []).forEach(a => {
+  (alerts || []).forEach(a => {
     const key = a.employer_name || "Unknown";
     if (!byEmployer[key]) byEmployer[key] = [];
     byEmployer[key].push(a);
   });
-  const employerGroups = Object.entries(byEmployer);
+  const employerGroups = Object.entries(byEmployer).sort((a, b) => b[1].length - a[1].length);
 
   return (
-    <div>
-      {/* Stat cards */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-        <StatCard label="TOTAL EMPLOYEES" value={stats?.total_employees} sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} />
-        <StatCard label="EMPLOYERS" value={stats?.total_employers} accent="#3b82f6" />
-        <StatCard label="CRITICAL ALERTS" value={stats?.total_alerts_critical} sub="< 30 days" accent="#dc2626" />
-        <StatCard label="WARNING ALERTS" value={stats?.total_alerts_warning} sub="30–90 days" accent="#d97706" />
-        <StatCard label="EXPIRED DOCS" value={stats?.total_alerts_expired} accent="#9ca3af" />
-        <StatCard label="SITES AT CAPACITY" value={stats?.sites_at_capacity} accent="#a855f7" />
+    <div style={{
+      background: C.cardBg,
+      border: `1px solid ${hasUrgent && count > 0 ? "#fecaca" : C.border}`,
+      borderRadius: 12, overflow: "hidden",
+      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+    }}>
+      {/* Section header */}
+      <div onClick={toggle} style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "13px 18px",
+        background: hasUrgent && count > 0 ? "#fff8f8" : C.pageBg,
+        borderBottom: expanded && count > 0 ? `1px solid ${C.border}` : "none",
+        cursor: "pointer", userSelect: "none",
+      }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{meta.icon}</span>
+        <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 700, flex: 1 }}>{title}</span>
+        {count === 0 ? (
+          <span style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: 14 }}>✓</span> All clear
+          </span>
+        ) : (
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {expired > 0  && <span style={{ background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{expired} expired</span>}
+            {critical > 0 && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{critical} expiring</span>}
+            {warning > 0  && <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{warning} warning</span>}
+          </div>
+        )}
+        <span style={{ color: C.textMuted, fontSize: 12, marginLeft: 4, transition: "transform 0.2s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
       </div>
 
-      {/* Alerts grouped by employer */}
-      {employerGroups.length > 0 && (
+      {expanded && count > 0 && (
         <div>
-          <div style={{ color: C.textMuted, fontSize: 11, letterSpacing: "0.1em", fontFamily: "monospace", marginBottom: 16 }}>
-            URGENT ALERTS — EXPIRING WITHIN 60 DAYS ({alertData.total})
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {employerGroups.map(([employer, alerts]) => (
-              <div key={employer} style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                {/* Employer header */}
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  padding: "10px 16px", background: C.pageBg,
-                  borderBottom: `1px solid ${C.border}`,
-                }}>
-                  <div style={{ width: 6, height: 6, borderRadius: 1, background: C.accent }} />
-                  <span style={{ color: C.text, fontFamily: "monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em" }}>{employer}</span>
-                  <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>— {alerts.length} alert{alerts.length !== 1 ? "s" : ""}</span>
-                </div>
-                {/* Alert rows */}
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {alerts.map((a, i) => (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "center", gap: 14,
-                      padding: "9px 16px",
-                      borderBottom: i < alerts.length - 1 ? `1px solid ${C.borderLight}` : "none",
-                      borderLeft: `3px solid ${STATUS_CONFIG[a.status]?.color || C.border}`,
-                    }}>
-                      <Badge status={a.status} />
-                      <span style={{ color: C.text, fontFamily: "monospace", fontSize: 13, flex: 1 }}>{a.full_name}</span>
-                      <span style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace" }}>{a.expiry_type}</span>
-                      <span style={{ color: C.textSub, fontSize: 11, fontFamily: "monospace" }}>{a.site_name}</span>
-                      <span style={{ color: STATUS_CONFIG[a.status]?.color, fontSize: 12, fontFamily: "monospace", fontWeight: 700, minWidth: 80, textAlign: "right" }}>
-                        {a.days_remaining < 0 ? `${Math.abs(a.days_remaining)}d ago` : `${a.days_remaining}d left`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {/* Column header */}
+          <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 160px 110px 100px", gap: 0, padding: "7px 18px 7px 18px", background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+            {["STATUS", "EMPLOYEE", "SITE", "EXPIRY DATE", "DAYS"].map(h => (
+              <span key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>{h}</span>
             ))}
           </div>
+          {employerGroups.map(([employer, rows], gi) => (
+            <div key={employer}>
+              {/* Employer group header */}
+              <div style={{
+                padding: "6px 18px",
+                background: "#fafafa",
+                borderBottom: `1px solid ${C.borderLight}`,
+                borderTop: gi > 0 ? `1px solid ${C.borderLight}` : "none",
+                display: "flex", alignItems: "center", gap: 8,
+              }}>
+                <span style={{ color: C.textSub, fontFamily: C.sans, fontSize: 11, fontWeight: 700 }}>{employer}</span>
+                <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11 }}>— {rows.length} {rows.length === 1 ? "employee" : "employees"}</span>
+              </div>
+              {/* Employee rows */}
+              {rows.sort((a, b) => a.days_remaining - b.days_remaining).map((a, i) => (
+                <div key={i}
+                  onClick={() => onEmployeeClick && onEmployeeClick(a.employee_id)}
+                  style={{
+                    display: "grid", gridTemplateColumns: "90px 1fr 160px 110px 100px",
+                    alignItems: "center",
+                    padding: "10px 18px",
+                    borderBottom: i < rows.length - 1 ? `1px solid ${C.borderLight}` : "none",
+                    borderLeft: `3px solid ${STATUS_CONFIG[a.status]?.color || C.border}`,
+                    transition: "background 0.1s",
+                    cursor: onEmployeeClick ? "pointer" : "default",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#fff5f5"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <div><Badge status={a.status} /></div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <span style={{ color: onEmployeeClick ? C.accent : C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.full_name}</span>
+                    <span style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11 }}>{a.employee_number}</span>
+                  </div>
+                  <span style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.site_name}</span>
+                  <span style={{ color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{a.expiry_date}</span>
+                  <div><DaysPill days={a.days_remaining} /></div>
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 };
 
-// ── Alerts Tab ────────────────────────────────────────────────────
-const AlertsTab = () => {
-  const [days, setDays] = useState(60);
-  const [filter, setFilter] = useState("All");
-  const { data, loading } = useFetch(`${API}/alerts/expiring?days=${days}`);
+// ── Dashboard Overview ────────────────────────────────────
+const DashboardTab = () => {
+  const { data: stats } = useFetch(`${API}/dashboard/stats`);
+  const { data: alertData } = useFetch(`${API}/alerts/expiring?days=90`);
+  const { data: sites }     = useFetch(`${API}/sites/`);
+  const { data: employers } = useFetch(`${API}/employers/`);
+  const [selectedEmp, setSelectedEmp] = useState(null);
 
-  const filtered = data?.alerts?.filter(a => filter === "All" || a.status === filter) || [];
+  const handleEmployeeClick = async (employeeId) => {
+    try {
+      const res = await apiFetch(`${API}/employees/${employeeId}`);
+      const emp = await res.json();
+      if (res.ok) setSelectedEmp(emp);
+    } catch {}
+  };
+
+  const byType = {
+    "Passport": [],
+    "Work Permit Fee": [],
+    "Insurance": [],
+    "Visa Stamp": [],
+    "Medical": [],
+  };
+  (alertData?.alerts || []).forEach(a => {
+    if (byType[a.expiry_type]) byType[a.expiry_type].push(a);
+  });
+
+  const categorySummary = [
+    { key: "Passport",        label: "Passports",       color: "#3b82f6" },
+    { key: "Work Permit Fee", label: "Work Permit Fee", color: "#dc2626" },
+    { key: "Insurance",       label: "Insurance",       color: "#d97706" },
+    { key: "Visa Stamp",      label: "Visa Stamp",      color: "#a855f7" },
+    { key: "Medical",         label: "Medical",         color: "#0891b2" },
+  ];
+
+  const totalAlerts = (alertData?.alerts || []).length;
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center" }}>
-        <div style={{ color: C.textMuted, fontSize: 12, fontFamily: "monospace" }}>LOOK-AHEAD:</div>
-        {[30, 60, 90, 180].map(d => (
-          <button key={d} onClick={() => setDays(d)} style={{
-            background: days === d ? C.accent : C.cardBg,
-            color: days === d ? "#fff" : C.textSub,
-            border: `1px solid ${days === d ? C.accent : C.border}`,
-            padding: "4px 14px", borderRadius: 3,
-            cursor: "pointer", fontFamily: "monospace", fontSize: 12, fontWeight: 700,
-          }}>{d}D</button>
-        ))}
-        <div style={{ flex: 1 }} />
-        {["All", "Expired", "Critical", "Warning"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{
-            background: filter === f ? (STATUS_CONFIG[f]?.color || C.accent) : C.cardBg,
-            color: filter === f ? "#fff" : C.textSub,
-            border: `1px solid ${filter === f ? (STATUS_CONFIG[f]?.color || C.accent) : C.border}`,
-            padding: "4px 14px", borderRadius: 3,
-            cursor: "pointer", fontFamily: "monospace", fontSize: 11, fontWeight: 700,
-          }}>{f.toUpperCase()}</button>
+      {/* Stat cards row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+        <StatCard label="Total Employees"  value={stats?.total_employees}      sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} />
+        <StatCard label="Employers"        value={stats?.total_employers}       sub={`${stats?.total_sites ?? "—"} sites total`} accent="#3b82f6" />
+        <StatCard label="Expired Docs"     value={stats?.total_alerts_expired}  sub="need immediate action" accent="#6b7280" glow />
+        <StatCard label="Expiring Soon"    value={stats?.total_alerts_critical} sub="within critical threshold" accent="#dc2626" glow />
+        <StatCard label="Warning"          value={stats?.total_alerts_warning}  sub="30–90 day window" accent="#d97706" />
+        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}   sub="quota full" accent="#a855f7" glow />
+        <StatCard label="Missing Documents" value={stats?.total_missing_docs}  sub="employees with incomplete records" accent="#0891b2" glow />
+      </div>
+
+      {/* Document health grid */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: C.sans, marginBottom: 10 }}>
+          Document Health — 90-Day Window
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+          {categorySummary.map(({ key, label, color }) => {
+            const items = byType[key] || [];
+            const exp  = items.filter(a => a.status === "Expired").length;
+            const crit = items.filter(a => a.status === "Critical").length;
+            const warn = items.filter(a => a.status === "Warning").length;
+            const allClear = exp === 0 && crit === 0 && warn === 0;
+            return (
+              <div key={key} style={{
+                background: C.cardBg,
+                border: `1px solid ${exp > 0 || crit > 0 ? `${color}30` : C.border}`,
+                borderTop: `3px solid ${allClear ? "#16a34a" : color}`,
+                borderRadius: 10, padding: "14px 16px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 18 }}>{CATEGORY_META[key === "Passport" ? "PASSPORTS" : key === "Work Permit Fee" ? "WORK PERMIT FEE" : key === "Visa Stamp" ? "VISA STAMP" : key.toUpperCase()]?.icon || "•"}</span>
+                  <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 700 }}>{label}</span>
+                </div>
+                {allClear ? (
+                  <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>✓</span> All documents valid
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {exp > 0  && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#6b7280", fontFamily: C.sans, fontSize: 12 }}>Expired</span><span style={{ background: "#f3f4f6", color: "#6b7280", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{exp}</span></div>}
+                    {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 12 }}>Expiring</span><span style={{ background: "#fef2f2", color: "#dc2626", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{crit}</span></div>}
+                    {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#d97706", fontFamily: C.sans, fontSize: 12 }}>Warning</span><span style={{ background: "#fffbeb", color: "#d97706", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{warn}</span></div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Category sections */}
+      {totalAlerts === 0 ? (
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "40px 24px", textAlign: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+          <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 15, fontWeight: 700 }}>All documents are in order</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, marginTop: 6 }}>No alerts in the next 90 days</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <CategorySection title="PASSPORTS"       alerts={byType["Passport"]}        onEmployeeClick={handleEmployeeClick} />
+          <CategorySection title="WORK PERMIT FEE" alerts={byType["Work Permit Fee"]} onEmployeeClick={handleEmployeeClick} />
+          <CategorySection title="INSURANCE"       alerts={byType["Insurance"]}       onEmployeeClick={handleEmployeeClick} />
+          <CategorySection title="VISA STAMP"      alerts={byType["Visa Stamp"]}      onEmployeeClick={handleEmployeeClick} />
+          <CategorySection title="MEDICAL"         alerts={byType["Medical"]}         onEmployeeClick={handleEmployeeClick} />
+        </div>
+      )}
+
+      {selectedEmp && (
+        <EmployeeDetailModal
+          emp={selectedEmp}
+          sites={sites}
+          employers={employers}
+          onClose={() => setSelectedEmp(null)}
+          onUpdated={updated => setSelectedEmp(updated)}
+          onDeleted={() => setSelectedEmp(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ── Alerts Tab ────────────────────────────────────────────
+const AlertsTab = () => {
+  const [view, setView] = useState("expiring");   // "expiring" | "missing"
+  const [days, setDays] = useState(60);
+  const [filter, setFilter] = useState("All");
+  const [employerFilter, setEmployerFilter] = useState("All");
+  const { data: employers } = useFetch(`${API}/employers/`);
+  const [selectedEmp, setSelectedEmp] = useState(null);
+
+  const selectedEmployer = employerFilter === "All" ? null : (employers || []).find(e => e.name === employerFilter);
+
+  const alertsUrl = selectedEmployer
+    ? `${API}/alerts/expiring?days=${days}&employer_id=${selectedEmployer.id}`
+    : `${API}/alerts/expiring?days=${days}`;
+  const missingUrl = selectedEmployer
+    ? `${API}/alerts/missing?employer_id=${selectedEmployer.id}`
+    : `${API}/alerts/missing`;
+
+  const { data: expiringData, loading: expiringLoading } = useFetch(alertsUrl);
+  const { data: missingData, loading: missingLoading }   = useFetch(missingUrl);
+
+  const loading = view === "expiring" ? expiringLoading : missingLoading;
+
+  const handleRowClick = async (employeeId) => {
+    try {
+      const res = await apiFetch(`${API}/employees/${employeeId}`);
+      const emp = await res.json();
+      if (res.ok) setSelectedEmp(emp);
+    } catch {}
+  };
+
+  const employerNames = (employers || []).map(e => e.name).sort();
+
+  // ── Expiring view ─────────────────────────────────────
+  const STATUS_PRIORITY = { Expired: 4, Critical: 3, Warning: 2, Valid: 1 };
+  const DOC_COLS = ["Passport", "Visa Stamp", "Insurance", "Work Permit Fee", "Medical"];
+
+  const allAlerts = (expiringData?.alerts || []);
+  const groupMap = {};
+  allAlerts.forEach(a => {
+    if (!groupMap[a.employee_id]) {
+      groupMap[a.employee_id] = {
+        employee_id: a.employee_id, employee_number: a.employee_number,
+        full_name: a.full_name, employer_name: a.employer_name,
+        site_name: a.site_name, docs: {}, worstPriority: 0, worstStatus: "Valid",
+      };
+    }
+    groupMap[a.employee_id].docs[a.expiry_type] = { expiry_date: a.expiry_date, days_remaining: a.days_remaining, status: a.status };
+    const p = STATUS_PRIORITY[a.status] || 0;
+    if (p > groupMap[a.employee_id].worstPriority) {
+      groupMap[a.employee_id].worstPriority = p;
+      groupMap[a.employee_id].worstStatus = a.status;
+    }
+  });
+
+  const groupedRows = Object.values(groupMap)
+    .filter(r => filter === "All" || STATUS_PRIORITY[r.worstStatus] >= STATUS_PRIORITY[filter])
+    .sort((a, b) => b.worstPriority - a.worstPriority);
+
+  const DocCell = ({ doc }) => {
+    if (!doc) return <td style={{ padding: "12px 14px", textAlign: "center", borderRight: `1px solid ${C.borderLight}` }}><span style={{ color: C.textMuted, fontSize: 13 }}>—</span></td>;
+    const daysText = doc.days_remaining >= 0 ? `${doc.days_remaining}d left` : `${Math.abs(doc.days_remaining)}d ago`;
+    return (
+      <td style={{ padding: "10px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <Badge status={doc.status} />
+          <span style={{ fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{doc.expiry_date}</span>
+          <span style={{ fontFamily: C.sans, fontSize: 11, fontWeight: 700, color: daysColor(doc.days_remaining) }}>{daysText}</span>
+        </div>
+      </td>
+    );
+  };
+
+  // ── Missing docs view ─────────────────────────────────
+  const missingRows = missingData?.alerts || [];
+  const missingTotal = missingData?.total || 0;
+
+  const DOC_FIELD_COLORS = {
+    "Passport":        { bg: "#eff6ff", color: "#1d4ed8" },
+    "Visa Stamp":      { bg: "#f5f3ff", color: "#6d28d9" },
+    "Insurance":       { bg: "#fff7ed", color: "#c2410c" },
+    "Work Permit Fee": { bg: "#fefce8", color: "#a16207" },
+    "Medical":         { bg: "#ecfeff", color: "#0e7490" },
+  };
+
+  const selectStyle = {
+    fontFamily: C.sans, fontSize: 13, color: C.text,
+    background: C.cardBg, border: `1px solid ${C.border}`,
+    borderRadius: 8, padding: "7px 32px 7px 12px",
+    cursor: "pointer", outline: "none",
+    appearance: "none", WebkitAppearance: "none",
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center",
+    minWidth: 200, maxWidth: 320,
+  };
+
+  return (
+    <div>
+      {/* View toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 20, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 10, width: "fit-content", overflow: "hidden" }}>
+        {[
+          { key: "expiring", label: "⚠ Expiring Documents", count: expiringData ? Object.keys(groupMap).length : null },
+          { key: "missing",  label: "○ Missing Documents",  count: missingTotal || null },
+        ].map(({ key, label, count }) => (
+          <button key={key} onClick={() => setView(key)} style={{
+            background: view === key ? C.accent : "transparent",
+            color: view === key ? "#fff" : C.textSub,
+            border: "none", padding: "9px 20px",
+            fontFamily: C.sans, fontSize: 13, fontWeight: 600,
+            cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+          }}>
+            {label}
+            {count != null && count > 0 && (
+              <span style={{ background: view === key ? "rgba(255,255,255,0.25)" : "#fee2e2", color: view === key ? "#fff" : "#dc2626", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>
+                {count}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
+      {/* Employer filter (shared) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ color: C.textMuted, fontSize: 12, fontFamily: C.sans, fontWeight: 500, whiteSpace: "nowrap" }}>Employer:</span>
+        <select value={employerFilter} onChange={e => setEmployerFilter(e.target.value)} style={selectStyle}>
+          <option value="All">All Employers</option>
+          {employerNames.map(name => <option key={name} value={name}>{name}</option>)}
+        </select>
+
+        {view === "expiring" && (
+          <>
+            <div style={{ marginLeft: 16, color: C.textMuted, fontSize: 12, fontFamily: C.sans, fontWeight: 500 }}>Look-ahead:</div>
+            {[30, 60, 90, 180].map(d => (
+              <button key={d} onClick={() => setDays(d)} style={{
+                background: days === d ? C.accent : C.cardBg,
+                color: days === d ? "#fff" : C.textSub,
+                border: `1px solid ${days === d ? C.accent : C.border}`,
+                padding: "6px 16px", borderRadius: 8,
+                cursor: "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+              }}>{d}d</button>
+            ))}
+            <div style={{ flex: 1 }} />
+            {[
+              { value: "All",      label: "All" },
+              { value: "Expired",  label: "Expired" },
+              { value: "Critical", label: "Expiring" },
+              { value: "Warning",  label: "Warning" },
+            ].map(({ value, label }) => (
+              <button key={value} onClick={() => setFilter(value)} style={{
+                background: filter === value ? (STATUS_CONFIG[value]?.color || C.accent) : C.cardBg,
+                color: filter === value ? "#fff" : C.textSub,
+                border: `1px solid ${filter === value ? (STATUS_CONFIG[value]?.color || C.accent) : C.border}`,
+                padding: "6px 16px", borderRadius: 8,
+                cursor: "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+              }}>{label}</button>
+            ))}
+          </>
+        )}
+      </div>
+
       {loading ? (
-        <div style={{ color: C.textMuted, fontFamily: "monospace", padding: 32, textAlign: "center" }}>LOADING...</div>
-      ) : (
+        <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 48, textAlign: "center" }}>Loading...</div>
+      ) : view === "expiring" ? (
         <div>
-          <div style={{ color: C.textMuted, fontSize: 11, fontFamily: "monospace", marginBottom: 12 }}>{filtered.length} RECORDS</div>
-          <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ color: C.textMuted, fontSize: 12, fontFamily: C.sans, marginBottom: 12, fontWeight: 500 }}>
+            {groupedRows.length} {groupedRows.length === 1 ? "employee" : "employees"} — click a row to view details
+          </div>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
-                  {["STATUS", "EMPLOYEE", "EMP NO.", "DOCUMENT TYPE", "EXPIRY DATE", "DAYS", "SITE", "EMPLOYER"].map(h => (
-                    <th key={h} style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", padding: "10px 12px", textAlign: "left" }}>{h}</th>
+                  <th style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 14px", textAlign: "left", textTransform: "uppercase", borderRight: `1px solid ${C.border}` }}>Employee</th>
+                  <th style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 14px", textAlign: "left", textTransform: "uppercase", borderRight: `1px solid ${C.border}` }}>Employer / Site</th>
+                  {DOC_COLS.map(h => (
+                    <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 14px", textAlign: "left", textTransform: "uppercase", borderRight: `1px solid ${C.border}`, minWidth: 140 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((a, i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid ${C.borderLight}`, transition: "background 0.1s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = C.rowHover}
+                {groupedRows.map(row => (
+                  <tr key={row.employee_id}
+                    onClick={() => handleRowClick(row.employee_id)}
+                    style={{ borderBottom: `1px solid ${C.borderLight}`, transition: "background 0.1s", cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#fff5f5"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "10px 12px" }}><Badge status={a.status} /></td>
-                    <td style={{ padding: "10px 12px", color: C.text, fontFamily: "monospace", fontSize: 13 }}>{a.full_name}</td>
-                    <td style={{ padding: "10px 12px", color: C.textSub, fontFamily: "monospace", fontSize: 12 }}>{a.employee_number}</td>
-                    <td style={{ padding: "10px 12px", color: C.textSub, fontFamily: "monospace", fontSize: 12 }}>{a.expiry_type}</td>
-                    <td style={{ padding: "10px 12px", color: C.textSub, fontFamily: "monospace", fontSize: 12 }}>{a.expiry_date}</td>
-                    <td style={{ padding: "10px 12px", color: STATUS_CONFIG[a.status]?.color, fontFamily: "monospace", fontSize: 12, fontWeight: 700 }}>
-                      {a.days_remaining < 0 ? `–${Math.abs(a.days_remaining)}` : `+${a.days_remaining}`}
+                    <td style={{ padding: "12px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Badge status={row.worstStatus} />
+                          <span style={{ color: C.accent, fontFamily: C.sans, fontSize: 13, fontWeight: 700 }}>{row.full_name}</span>
+                        </div>
+                        <span style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11 }}>{row.employee_number}</span>
+                      </div>
                     </td>
-                    <td style={{ padding: "10px 12px", color: C.textSub, fontFamily: "monospace", fontSize: 12 }}>{a.site_name}</td>
-                    <td style={{ padding: "10px 12px", color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>{a.employer_name}</td>
+                    <td style={{ padding: "12px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 500 }}>{row.employer_name}</span>
+                        <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>{row.site_name}</span>
+                      </div>
+                    </td>
+                    {DOC_COLS.map(col => <DocCell key={col} doc={row.docs[col]} />)}
                   </tr>
                 ))}
+                {groupedRows.length === 0 && (
+                  <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>No alerts found for this filter.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Missing Documents view */
+        <div>
+          <div style={{ color: C.textMuted, fontSize: 12, fontFamily: C.sans, marginBottom: 12, fontWeight: 500 }}>
+            {missingRows.length} {missingRows.length === 1 ? "employee" : "employees"} with incomplete records — click a row to update
+          </div>
+          <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+                  {["Employee", "Employer / Site", "Missing Documents", "Count"].map(h => (
+                    <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 14px", textAlign: "left", textTransform: "uppercase", borderRight: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {missingRows.map(row => (
+                  <tr key={row.employee_id}
+                    onClick={() => handleRowClick(row.employee_id)}
+                    style={{ borderBottom: `1px solid ${C.borderLight}`, transition: "background 0.1s", cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#f0f9ff"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "12px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>{row.full_name}</span>
+                        <span style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11 }}>{row.employee_number}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 500 }}>{row.employer_name}</span>
+                        <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>{row.site_name}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {row.missing_fields.map(field => {
+                          const c = DOC_FIELD_COLORS[field] || { bg: "#f1f5f9", color: "#64748b" };
+                          return (
+                            <span key={field} style={{ background: c.bg, color: c.color, border: `1px solid ${c.color}30`, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 600, fontFamily: C.sans }}>
+                              {field}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 14px", borderRight: `1px solid ${C.borderLight}`, verticalAlign: "middle" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: "50%", background: row.missing_fields.length === 5 ? "#fef2f2" : row.missing_fields.length >= 3 ? "#fff7ed" : "#fffbeb", color: row.missing_fields.length === 5 ? "#dc2626" : row.missing_fields.length >= 3 ? "#c2410c" : "#a16207", fontFamily: C.mono, fontSize: 12, fontWeight: 700 }}>
+                        {row.missing_fields.length}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {missingRows.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: 40, textAlign: "center", color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>✓ All employees have complete records</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
+
+      {selectedEmp && (
+        <EmployeeDetailModal
+          emp={selectedEmp}
+          sites={null}
+          employers={employers}
+          onClose={() => setSelectedEmp(null)}
+          onUpdated={updated => setSelectedEmp(updated)}
+          onDeleted={() => setSelectedEmp(null)}
+        />
+      )}
     </div>
   );
 };
 
-// ── Employees Tab ─────────────────────────────────────────────────
+// ── Employees Tab ─────────────────────────────────────────
 const EmployeesTab = () => {
-  const { data: employees, loading, refetch } = useFetch(`${API}/employees/?limit=200`);
-  const { data: sites } = useFetch(`${API}/sites/`);
+  const { data: employees, loading } = useFetch(`${API}/employees/?limit=200`);
+  const { data: sites }     = useFetch(`${API}/sites/`);
   const { data: employers } = useFetch(`${API}/employers/`);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({});
+  const [showAddForm, setShowAddForm]     = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [selectedEmp, setSelectedEmp]     = useState(null);
+  const [localEmployees, setLocalEmployees] = useState(null);
+  const [form, setForm]   = useState({});
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [search, setSearch] = useState("");
+  const [showResigned, setShowResigned] = useState(false);
 
-  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  useEffect(() => { if (employees) setLocalEmployees(employees); }, [employees]);
 
-  const handleSubmit = async () => {
+  const handleFormChange = e => {
+    const { name, value } = e.target;
+    if (name === "employer_id") {
+      setForm(f => ({ ...f, employer_id: value, site_id: "" }));
+    } else {
+      setForm(f => ({ ...f, [name]: value }));
+    }
+  };
+
+  const handleAdd = async () => {
     setError(null);
     try {
-      const res = await fetch(`${API}/employees/`, {
+      const res = await apiFetch(`${API}/employees/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, employer_id: parseInt(form.employer_id), site_id: parseInt(form.site_id) }),
@@ -331,103 +1262,224 @@ const EmployeesTab = () => {
       if (!res.ok) {
         setError(data.detail?.message || data.detail || "Error creating employee");
       } else {
-        setSuccess(`Employee ${data.full_name} added successfully.`);
-        setShowForm(false); setForm({}); refetch();
+        setSuccess(`${data.full_name} added successfully.`);
+        setShowAddForm(false); setForm({});
+        setLocalEmployees(prev => [...(prev || []), data]);
         setTimeout(() => setSuccess(null), 4000);
       }
     } catch (e) { setError(e.message); }
   };
 
-  const siteOptions = (sites || []).map(s => ({ value: s.id, label: `${s.site_name} (${s.used_slots}/${s.total_quota_slots} slots)` }));
+  const handleUpdated = (updated) => {
+    setLocalEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+    setSelectedEmp(updated);
+  };
+
+  const handleDeleted = (id) => {
+    setLocalEmployees(prev => prev.filter(e => e.id !== id));
+    setSelectedEmp(null);
+  };
+
+  const filteredSiteOptions = (sites || [])
+    .filter(s => !form.employer_id || s.employer_id === parseInt(form.employer_id))
+    .map(s => ({ value: s.id, label: `${s.site_name} (${s.used_slots}/${s.total_quota_slots} slots)` }));
+
   const employerOptions = (employers || []).map(e => ({ value: e.id, label: e.name }));
+
+  const lowerSearch = search.toLowerCase().trim();
+  const list = (localEmployees || []).filter(emp => {
+    if (!showResigned && emp.resigned) return false;
+    if (!lowerSearch) return true;
+    const empName = (employers || []).find(e => e.id === emp.employer_id)?.name || "";
+    const siteName = (sites || []).find(s => s.id === emp.site_id)?.site_name || "";
+    return (
+      emp.full_name?.toLowerCase().includes(lowerSearch) ||
+      emp.employee_number?.toLowerCase().includes(lowerSearch) ||
+      emp.passport_number?.toLowerCase().includes(lowerSearch) ||
+      empName.toLowerCase().includes(lowerSearch) ||
+      siteName.toLowerCase().includes(lowerSearch) ||
+      emp.nationality?.toLowerCase().includes(lowerSearch)
+    );
+  });
+  const resignedCount = (localEmployees || []).filter(e => e.resigned).length;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16, gap: 12, alignItems: "center" }}>
-        {success && <div style={{ color: "#16a34a", fontFamily: "monospace", fontSize: 12 }}>{success}</div>}
-        <button onClick={() => setShowForm(true)} style={{
-          background: C.accent, color: "#fff", border: "none",
-          padding: "8px 20px", borderRadius: 6, cursor: "pointer",
-          fontFamily: "monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em",
-        }}>+ ADD EMPLOYEE</button>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18, gap: 12, alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Search by name, emp no., passport no., employer, site..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            flex: 1, maxWidth: 440, background: C.cardBg, border: `1px solid ${C.border}`,
+            color: C.text, padding: "9px 14px", borderRadius: 10,
+            fontFamily: C.sans, fontSize: 13, outline: "none",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          }}
+        />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {success && <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 500 }}>{success}</div>}
+          {resignedCount > 0 && (
+            <button onClick={() => setShowResigned(v => !v)} style={{
+              background: showResigned ? "#f9fafb" : C.cardBg,
+              color: showResigned ? "#6b7280" : C.textSub,
+              border: `1px solid ${C.border}`,
+              padding: "8px 16px", borderRadius: 9, cursor: "pointer",
+              fontFamily: C.sans, fontSize: 13, fontWeight: 500,
+            }}>
+              {showResigned ? "Hide" : "Show"} Resigned ({resignedCount})
+            </button>
+          )}
+          <button onClick={() => setShowCsvImport(true)} style={{
+            background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`,
+            padding: "9px 18px", borderRadius: 9, cursor: "pointer",
+            fontFamily: C.sans, fontSize: 13, fontWeight: 500,
+          }}>Import CSV</button>
+          <button onClick={() => { setShowAddForm(true); setForm({}); setError(null); }} style={{
+            background: C.accent, color: "#fff", border: "none",
+            padding: "9px 22px", borderRadius: 9, cursor: "pointer",
+            fontFamily: C.sans, fontSize: 13, fontWeight: 600, letterSpacing: "0.02em",
+            boxShadow: `0 2px 8px ${C.accent}40`,
+          }}>+ Add Employee</button>
+        </div>
       </div>
 
-      {loading ? (
-        <div style={{ color: C.textMuted, fontFamily: "monospace", padding: 32, textAlign: "center" }}>LOADING...</div>
+      {loading && !localEmployees ? (
+        <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 48, textAlign: "center" }}>Loading...</div>
       ) : (
-        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
-                {["EMP NO.", "NAME", "EMPLOYER", "SITE", "NATIONALITY", "PASSPORT", "VISA", "INSURANCE", "WORK PERMIT"].map(h => (
-                  <th key={h} style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", padding: "10px 10px", textAlign: "left" }}>{h}</th>
+                {["Emp No.", "Name", "Passport No.", "Employer", "Site", "Nationality", "Passport", "Visa", "Insurance", "Work Permit", "Medical"].map(h => (
+                  <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 12px", textAlign: "left", textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(employees || []).map((emp) => (
-                <tr key={emp.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}
-                  onMouseEnter={e => e.currentTarget.style.background = C.rowHover}
+              {list.map((emp) => (
+                <tr key={emp.id}
+                  onClick={() => setSelectedEmp(emp)}
+                  style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: "pointer", transition: "background 0.1s", opacity: emp.resigned ? 0.55 : 1 }}
+                  onMouseEnter={e => e.currentTarget.style.background = emp.resigned ? "#f9fafb" : "#fff5f5"}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ padding: "9px 10px", color: C.textSub, fontFamily: "monospace", fontSize: 11 }}>{emp.employee_number}</td>
-                  <td style={{ padding: "9px 10px", color: C.text, fontFamily: "monospace", fontSize: 13 }}>{emp.full_name}</td>
-                  <td style={{ padding: "9px 10px", color: C.textSub, fontFamily: "monospace", fontSize: 11 }}>{emp.employer_name || emp.employer_id}</td>
-                  <td style={{ padding: "9px 10px", color: C.textSub, fontFamily: "monospace", fontSize: 11 }}>{emp.site_name || emp.site_id}</td>
-                  <td style={{ padding: "9px 10px", color: C.textSub, fontFamily: "monospace", fontSize: 11 }}>{emp.nationality || "—"}</td>
-                  <td style={{ padding: "9px 10px" }}>{emp.passport_status ? <Badge status={emp.passport_status.status} /> : <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>—</span>}</td>
-                  <td style={{ padding: "9px 10px" }}>{emp.visa_stamp_status ? <Badge status={emp.visa_stamp_status.status} /> : <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>—</span>}</td>
-                  <td style={{ padding: "9px 10px" }}>{emp.insurance_status ? <Badge status={emp.insurance_status.status} /> : <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>—</span>}</td>
-                  <td style={{ padding: "9px 10px" }}>{emp.work_permit_fee_status ? <Badge status={emp.work_permit_fee_status.status} /> : <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.employee_number}</td>
+                  <td style={{ padding: "11px 12px", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+                    <span style={{ color: emp.resigned ? C.textMuted : C.accent }}>{emp.full_name}</span>
+                    {emp.resigned && <span style={{ marginLeft: 8, background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, fontFamily: C.sans }}>RESIGNED</span>}
+                  </td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.passport_number || <span style={{ color: C.textMuted }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>
+                    {(employers || []).find(e => e.id === emp.employer_id)?.name || emp.employer_id}
+                  </td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>
+                    {(sites || []).find(s => s.id === emp.site_id)?.site_name || emp.site_id}
+                  </td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.nationality || "—"}</td>
+                  <td style={{ padding: "11px 12px" }}>{emp.passport_status        ? <Badge status={emp.passport_status.status}        /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px" }}>{emp.visa_stamp_status      ? <Badge status={emp.visa_stamp_status.status}      /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px" }}>{emp.insurance_status       ? <Badge status={emp.insurance_status.status}       /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px" }}>{emp.work_permit_fee_status ? <Badge status={emp.work_permit_fee_status.status} /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px" }}>{emp.medical_status         ? <Badge status={emp.medical_status.status}         /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {list.length === 0 && (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: 40, textAlign: "center" }}>
+              {search ? "No employees match your search." : "No employees found."}
+            </div>
+          )}
         </div>
       )}
 
-      {showForm && (
-        <Modal title="ADD NEW EMPLOYEE" onClose={() => { setShowForm(false); setError(null); }}>
+      {selectedEmp && (
+        <EmployeeDetailModal
+          emp={selectedEmp}
+          sites={sites}
+          employers={employers}
+          onClose={() => setSelectedEmp(null)}
+          onUpdated={handleUpdated}
+          onDeleted={handleDeleted}
+        />
+      )}
+
+      {showAddForm && (
+        <Modal wide title="Add New Employee" onClose={() => { setShowAddForm(false); setError(null); }}>
           {error && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 4, fontFamily: "monospace", fontSize: 12, marginBottom: 16 }}>
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>
               ⚠ {error}
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-            <InputRow label="FULL NAME" name="full_name" value={form.full_name || ""} onChange={handleChange} required />
-            <InputRow label="EMPLOYEE NUMBER" name="employee_number" value={form.employee_number || ""} onChange={handleChange} required />
-            <SelectRow label="EMPLOYER" name="employer_id" value={form.employer_id || ""} onChange={handleChange} options={employerOptions} required />
-            <SelectRow label="SITE" name="site_id" value={form.site_id || ""} onChange={handleChange} options={siteOptions} required />
-            <InputRow label="NATIONALITY" name="nationality" value={form.nationality || ""} onChange={handleChange} />
-            <InputRow label="JOB TITLE" name="job_title" value={form.job_title || ""} onChange={handleChange} />
-            <InputRow label="PASSPORT EXPIRY" name="passport_expiry" type="date" value={form.passport_expiry || ""} onChange={handleChange} />
-            <InputRow label="VISA STAMP EXPIRY" name="visa_stamp_expiry" type="date" value={form.visa_stamp_expiry || ""} onChange={handleChange} />
-            <InputRow label="INSURANCE EXPIRY" name="insurance_expiry" type="date" value={form.insurance_expiry || ""} onChange={handleChange} />
-            <InputRow label="WORK PERMIT FEE EXPIRY" name="work_permit_fee_expiry" type="date" value={form.work_permit_fee_expiry || ""} onChange={handleChange} />
+            <InputRow label="Full Name" name="full_name" value={form.full_name || ""} onChange={handleFormChange} required />
+            <InputRow label="Passport No." name="passport_number" value={form.passport_number || ""} onChange={handleFormChange} placeholder="e.g. A12345678" />
+            <SelectRow label="Employer" name="employer_id" value={form.employer_id || ""} onChange={handleFormChange} options={employerOptions} required />
+            <SelectRow label="Site"     name="site_id"     value={form.site_id || ""}     onChange={handleFormChange} options={filteredSiteOptions} required />
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Nationality</label>
+              <select name="nationality" value={form.nationality || ""} onChange={handleFormChange}
+                style={{ ...inputStyle(false), appearance: "none", cursor: "pointer" }}>
+                <option value="">— Select —</option>
+                {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <InputRow label="Job Title" name="job_title" value={form.job_title || ""} onChange={handleFormChange} />
+            <InputRow label="Passport Expiry" name="passport_expiry" type="date" value={form.passport_expiry || ""} onChange={handleFormChange} />
+            <ExtendField label="Visa Stamp Expiry"  name="visa_stamp_expiry"  value={form.visa_stamp_expiry || ""}  onChange={handleFormChange} unit="years" />
+            <ExtendField label="Insurance Expiry"   name="insurance_expiry"   value={form.insurance_expiry || ""}   onChange={handleFormChange} unit="years" />
+            <ExtendField label="Work Permit Fee Expiry" name="work_permit_fee_expiry" value={form.work_permit_fee_expiry || ""} onChange={handleFormChange} unit="months" />
+            <ExtendField label="Medical Expiry"     name="medical_expiry"     value={form.medical_expiry || ""}     onChange={handleFormChange} unit="years" />
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <button onClick={() => { setShowForm(false); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "8px 20px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>CANCEL</button>
-            <button onClick={handleSubmit} style={{ background: C.accent, color: "#fff", border: "none", padding: "8px 24px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12, fontWeight: 700 }}>CREATE</button>
+            <button onClick={() => { setShowAddForm(false); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>Cancel</button>
+            <button onClick={handleAdd} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, boxShadow: `0 2px 8px ${C.accent}40` }}>Create</button>
           </div>
         </Modal>
+      )}
+
+      {showCsvImport && (
+        <CsvImportModal
+          onClose={() => setShowCsvImport(false)}
+          onDone={() => { setShowCsvImport(false); setLocalEmployees(null); }}
+        />
       )}
     </div>
   );
 };
 
-// ── Employers Tab (with nested Sites) ────────────────────────────
+// ── Employers Tab ─────────────────────────────────────────
 const EmployersTab = () => {
   const { data: employers, loading, refetch: refetchEmployers } = useFetch(`${API}/employers/`);
   const { data: sites, refetch: refetchSites } = useFetch(`${API}/sites/`);
   const [showEmployerForm, setShowEmployerForm] = useState(false);
-  const [showSiteForm, setShowSiteForm] = useState(null); // employer_id for add site
-  const [form, setForm] = useState({});
+  const [showSiteForm, setShowSiteForm] = useState(null);
+  const [form, setForm]   = useState({});
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  // Site employees modal
+  const [viewSite, setViewSite] = useState(null);          // site object
+  const [siteEmployees, setSiteEmployees] = useState([]);   // employees for that site
+  const [siteEmpLoading, setSiteEmpLoading] = useState(false);
+  const [selectedEmp, setSelectedEmp] = useState(null);
+
+  const handleViewSiteEmployees = async (site) => {
+    setViewSite(site);
+    setSiteEmpLoading(true);
+    try {
+      const res = await apiFetch(`${API}/employees/?site_id=${site.id}&limit=200`);
+      const data = await res.json();
+      setSiteEmployees(Array.isArray(data) ? data : []);
+    } catch { setSiteEmployees([]); }
+    finally { setSiteEmpLoading(false); }
+  };
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleAddEmployer = async () => {
     setError(null);
-    const res = await fetch(`${API}/employers/`, {
+    const res = await apiFetch(`${API}/employers/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(form),
@@ -438,7 +1490,7 @@ const EmployersTab = () => {
 
   const handleAddSite = async () => {
     setError(null);
-    const res = await fetch(`${API}/sites/`, {
+    const res = await apiFetch(`${API}/sites/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...form, employer_id: parseInt(showSiteForm), total_quota_slots: parseInt(form.total_quota_slots) }),
@@ -447,158 +1499,1395 @@ const EmployersTab = () => {
     else { const d = await res.json(); setError(d.detail || "Error creating site"); }
   };
 
-  // Group sites by employer_id
   const sitesByEmployer = {};
   (sites || []).forEach(s => {
     if (!sitesByEmployer[s.employer_id]) sitesByEmployer[s.employer_id] = [];
     sitesByEmployer[s.employer_id].push(s);
   });
 
+  const filteredEmployers = (employers || []).filter(e =>
+    e.name.toLowerCase().includes(search.toLowerCase()) ||
+    (e.contact_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (e.registration_number || "").toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, gap: 12 }}>
+        <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            placeholder="Search employers..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              width: "100%", boxSizing: "border-box",
+              fontFamily: C.sans, fontSize: 13, color: C.text,
+              background: C.cardBg, border: `1px solid ${C.border}`,
+              borderRadius: 9, padding: "8px 12px 8px 34px", outline: "none",
+            }}
+          />
+        </div>
         <button onClick={() => { setShowEmployerForm(true); setForm({}); setError(null); }} style={{
           background: C.accent, color: "#fff", border: "none",
-          padding: "8px 20px", borderRadius: 6, cursor: "pointer",
-          fontFamily: "monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em",
-        }}>+ ADD EMPLOYER</button>
+          padding: "9px 22px", borderRadius: 9, cursor: "pointer",
+          fontFamily: C.sans, fontSize: 13, fontWeight: 600,
+          boxShadow: `0 2px 8px ${C.accent}40`, flexShrink: 0,
+        }}>+ Add Employer</button>
       </div>
 
       {loading ? (
-        <div style={{ color: C.textMuted, fontFamily: "monospace", padding: 32, textAlign: "center" }}>LOADING...</div>
+        <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 48, textAlign: "center" }}>Loading...</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {(employers || []).map(employer => {
-            const empSites = sitesByEmployer[employer.id] || [];
+          {filteredEmployers.length === 0 && search && (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 48, textAlign: "center" }}>
+              No employers match "{search}"
+            </div>
+          )}
+          {filteredEmployers.map(employer => {
+            const empSites   = sitesByEmployer[employer.id] || [];
             const totalSlots = empSites.reduce((s, x) => s + (x.total_quota_slots || 0), 0);
             const usedSlots  = empSites.reduce((s, x) => s + (x.used_slots || 0), 0);
             return (
               <div key={employer.id} style={{
                 background: C.cardBg, border: `1px solid ${C.border}`,
-                borderRadius: 10, overflow: "hidden",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+                borderRadius: 14, overflow: "hidden",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
               }}>
-                {/* Employer header bar */}
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 14,
-                  padding: "14px 20px", background: C.pageBg,
-                  borderBottom: empSites.length > 0 ? `1px solid ${C.border}` : "none",
-                }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: C.accent, flexShrink: 0 }} />
-                  <span style={{ color: C.text, fontFamily: "monospace", fontSize: 14, fontWeight: 700, flex: 1 }}>{employer.name}</span>
-                  <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11, background: C.border, padding: "2px 8px", borderRadius: 3 }}>
-                    {empSites.length} {empSites.length === 1 ? "SITE" : "SITES"}
+                {/* Employer header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 22px", background: C.pageBg, borderBottom: empSites.length > 0 ? `1px solid ${C.border}` : "none" }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: C.accentBg, border: `1px solid ${C.accentBorder}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: C.accent, fontSize: 14, fontWeight: 800, fontFamily: C.sans,
+                    flexShrink: 0,
+                  }}>
+                    {employer.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: C.text, fontFamily: C.sans, fontSize: 15, fontWeight: 700 }}>{employer.name}</div>
+                    {employer.registration_number && (
+                      <div style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11, marginTop: 2 }}>Reg: {employer.registration_number}</div>
+                    )}
+                  </div>
+                  <span style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12, fontWeight: 500, background: C.border, padding: "3px 10px", borderRadius: 20 }}>
+                    {empSites.length} {empSites.length === 1 ? "site" : "sites"}
                   </span>
                   {totalSlots > 0 && (
-                    <span style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 11 }}>
-                      {usedSlots}/{totalSlots} total slots
-                    </span>
+                    <span style={{ color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{usedSlots}/{totalSlots} slots</span>
                   )}
                   <button onClick={() => { setShowSiteForm(employer.id); setForm({}); setError(null); }} style={{
-                    background: "transparent", color: C.accent,
-                    border: `1px solid ${C.accentBorder}`,
-                    padding: "4px 12px", borderRadius: 4, cursor: "pointer",
-                    fontFamily: "monospace", fontSize: 11, fontWeight: 700,
-                  }}>+ ADD SITE</button>
+                    background: "transparent", color: C.accent, border: `1px solid ${C.accentBorder}`,
+                    padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+                    fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+                  }}>+ Add Site</button>
                 </div>
-
-                {/* Sites under this employer */}
                 {empSites.length > 0 && (
-                  <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
-                    {empSites.map(site => <SiteCard key={site.id} site={site} />)}
+                  <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    {empSites.map(site => <SiteCard key={site.id} site={site} onViewEmployees={handleViewSiteEmployees} />)}
                   </div>
                 )}
-
                 {empSites.length === 0 && (
-                  <div style={{ padding: "16px 20px", color: C.textMuted, fontFamily: "monospace", fontSize: 12 }}>
-                    No sites added yet — click + ADD SITE to create one.
+                  <div style={{ padding: "16px 22px", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>
+                    No sites yet — click + Add Site to create one.
                   </div>
                 )}
               </div>
             );
           })}
-
           {(employers || []).length === 0 && (
-            <div style={{ color: C.textMuted, fontFamily: "monospace", fontSize: 13, textAlign: "center", padding: 48 }}>
-              No employers found. Click + ADD EMPLOYER to get started.
+            <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 14, textAlign: "center", padding: 56 }}>
+              No employers found. Click + Add Employer to get started.
             </div>
           )}
         </div>
       )}
 
-      {/* Add Employer Modal */}
       {showEmployerForm && (
-        <Modal title="ADD NEW EMPLOYER" onClose={() => { setShowEmployerForm(false); setError(null); }}>
-          {error && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 4, fontFamily: "monospace", fontSize: 12, marginBottom: 16 }}>
-              ⚠ {error}
-            </div>
-          )}
-          <InputRow label="EMPLOYER NAME" name="name" value={form.name || ""} onChange={handleChange} required />
+        <Modal title="Add New Employer" onClose={() => { setShowEmployerForm(false); setError(null); }}>
+          {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>⚠ {error}</div>}
+          <InputRow label="Employer Name"       name="name"                value={form.name || ""}                onChange={handleChange} required />
+          <InputRow label="Registration Number" name="registration_number" value={form.registration_number || ""} onChange={handleChange} required />
+          <InputRow label="Contact Name"        name="contact_name"        value={form.contact_name || ""}        onChange={handleChange} />
+          <InputRow label="Contact Email"       name="contact_email"       value={form.contact_email || ""}       onChange={handleChange} />
+          <InputRow label="Contact Phone"       name="contact_phone"       value={form.contact_phone || ""}       onChange={handleChange} />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <button onClick={() => { setShowEmployerForm(false); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "8px 20px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>CANCEL</button>
-            <button onClick={handleAddEmployer} style={{ background: C.accent, color: "#fff", border: "none", padding: "8px 24px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12, fontWeight: 700 }}>CREATE</button>
+            <button onClick={() => { setShowEmployerForm(false); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>Cancel</button>
+            <button onClick={handleAddEmployer} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, boxShadow: `0 2px 8px ${C.accent}40` }}>Create</button>
           </div>
         </Modal>
       )}
 
-      {/* Add Site Modal (pre-bound to employer) */}
       {showSiteForm && (
-        <Modal title="ADD NEW SITE" onClose={() => { setShowSiteForm(null); setError(null); }}>
-          {error && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 4, fontFamily: "monospace", fontSize: 12, marginBottom: 16 }}>
-              ⚠ {error}
-            </div>
-          )}
-          <div style={{ background: C.accentBg, border: `1px solid ${C.accentBorder}`, padding: "8px 12px", borderRadius: 4, fontFamily: "monospace", fontSize: 12, color: C.textSub, marginBottom: 16 }}>
-            EMPLOYER: <strong style={{ color: C.text }}>{(employers || []).find(e => e.id === showSiteForm)?.name}</strong>
+        <Modal title="Add New Site" onClose={() => { setShowSiteForm(null); setError(null); }}>
+          {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>⚠ {error}</div>}
+          <div style={{ background: C.accentBg, border: `1px solid ${C.accentBorder}`, padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, color: C.textSub, marginBottom: 20 }}>
+            Employer: <strong style={{ color: C.text }}>{(employers || []).find(e => e.id === showSiteForm)?.name}</strong>
           </div>
-          <InputRow label="SITE NAME" name="site_name" value={form.site_name || ""} onChange={handleChange} required />
-          <InputRow label="TOTAL QUOTA SLOTS" name="total_quota_slots" type="number" value={form.total_quota_slots || ""} onChange={handleChange} required />
+          <InputRow label="Site Name"         name="site_name"         value={form.site_name || ""}         onChange={handleChange} required />
+          <InputRow label="Total Quota Slots" name="total_quota_slots" type="number" value={form.total_quota_slots || ""} onChange={handleChange} required />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
-            <button onClick={() => { setShowSiteForm(null); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "8px 20px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>CANCEL</button>
-            <button onClick={handleAddSite} style={{ background: C.accent, color: "#fff", border: "none", padding: "8px 24px", borderRadius: 4, cursor: "pointer", fontFamily: "monospace", fontSize: 12, fontWeight: 700 }}>CREATE</button>
+            <button onClick={() => { setShowSiteForm(null); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>Cancel</button>
+            <button onClick={handleAddSite} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, boxShadow: `0 2px 8px ${C.accent}40` }}>Create</button>
           </div>
         </Modal>
+      )}
+
+      {/* Site employees modal */}
+      {viewSite && (
+        <Modal wide title={`${viewSite.site_name} — Assigned Employees`} onClose={() => setViewSite(null)}>
+          <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+            {[
+              { label: "Total Slots",      value: viewSite.total_quota_slots, color: C.textSub },
+              { label: "Occupied",         value: viewSite.used_slots,        color: C.accent },
+              { label: "Available",        value: viewSite.available_slots,   color: "#16a34a" },
+              { label: "Utilisation",      value: `${viewSite.quota_utilisation_pct}%`, color: C.textSub },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ flex: 1, background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 4 }}>{label}</div>
+                <div style={{ color, fontSize: 22, fontWeight: 800, fontFamily: C.mono }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          {siteEmpLoading ? (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 32, textAlign: "center" }}>Loading...</div>
+          ) : siteEmployees.length === 0 ? (
+            <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 32, textAlign: "center" }}>No employees assigned to this site.</div>
+          ) : (
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+                    {["Emp No.", "Name", "Nationality", "Job Title", "Passport", "Visa", "Insurance", "Work Permit", "Medical"].map(h => (
+                      <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", padding: "10px 12px", textAlign: "left", textTransform: "uppercase" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {siteEmployees.map(emp => (
+                    <tr key={emp.id}
+                      onClick={() => setSelectedEmp(emp)}
+                      style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: "pointer", transition: "background 0.1s", opacity: emp.resigned ? 0.5 : 1 }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#fff5f5"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{emp.employee_number}</td>
+                      <td style={{ padding: "9px 12px", color: C.accent, fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+                        {emp.full_name}
+                        {emp.resigned && <span style={{ marginLeft: 6, background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 20, fontSize: 10, fontWeight: 700 }}>RESIGNED</span>}
+                      </td>
+                      <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.nationality || "—"}</td>
+                      <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.job_title || "—"}</td>
+                      <td style={{ padding: "9px 12px" }}>{emp.passport_status        ? <Badge status={emp.passport_status.status}        /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: "9px 12px" }}>{emp.visa_stamp_status      ? <Badge status={emp.visa_stamp_status.status}      /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: "9px 12px" }}>{emp.insurance_status       ? <Badge status={emp.insurance_status.status}       /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: "9px 12px" }}>{emp.work_permit_fee_status ? <Badge status={emp.work_permit_fee_status.status} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: "9px 12px" }}>{emp.medical_status         ? <Badge status={emp.medical_status.status}         /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* Employee detail from site employees modal */}
+      {selectedEmp && (
+        <EmployeeDetailModal
+          emp={selectedEmp}
+          sites={sites}
+          employers={employers}
+          onClose={() => setSelectedEmp(null)}
+          onUpdated={updated => {
+            setSelectedEmp(updated);
+            setSiteEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+          }}
+          onDeleted={id => {
+            setSelectedEmp(null);
+            setSiteEmployees(prev => prev.filter(e => e.id !== id));
+          }}
+        />
       )}
     </div>
   );
 };
 
-// ── Root App ──────────────────────────────────────────────────────
-export default function App() {
-  const [tab, setTab] = useState("OVERVIEW");
+// ── CSV Import Modal ──────────────────────────────────────
+const CSV_UPDATE_TEMPLATE = [
+  "employee_number,full_name,passport_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
+  "EMP-100,John Smith,A12345678,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
+].join("\n");
+
+const CSV_CREATE_TEMPLATE = [
+  "full_name,employer_name,site_name,passport_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
+  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
+  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,Filipino,Technician,2028-03-15,2028-03-15,2027-06-01,2027-09-01,2027-03-15",
+].join("\n");
+
+const CsvImportModal = ({ onClose, onDone }) => {
+  const [mode, setMode] = useState("create"); // "create" | "update"
+  const [file, setFile] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const switchMode = (m) => { setMode(m); setFile(null); setResult(null); setError(null); };
+
+  const downloadTemplate = () => {
+    const content = mode === "create" ? CSV_CREATE_TEMPLATE : CSV_UPDATE_TEMPLATE;
+    const filename = mode === "create" ? "new_employees_template.csv" : "update_employees_template.csv";
+    const blob = new Blob([content], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setLoading(true); setError(null); setResult(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    const endpoint = mode === "create" ? `${API}/employees/bulk-create` : `${API}/employees/bulk-update`;
+    try {
+      const res = await apiFetch(endpoint, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail || "Upload failed"); }
+      else { setResult(data); onDone(); }
+    } catch { setError("Network error"); }
+    finally { setLoading(false); }
+  };
+
+  const CREATE_FIELDS = [
+    { col: "full_name",              note: "REQUIRED — employee's full name", required: true },
+    { col: "employer_name",          note: "REQUIRED — exact employer name as in the system", required: true },
+    { col: "site_name",              note: "REQUIRED — exact site name under that employer", required: true },
+    { col: "passport_number",        note: "Passport document number — checked for duplicates" },
+    { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
+    { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
+    { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
+    { col: "visa_stamp_expiry",      note: "Date format: YYYY-MM-DD" },
+    { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
+    { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
+    { col: "medical_expiry",         note: "Date format: YYYY-MM-DD — renewed yearly" },
+  ];
+
+  const UPDATE_FIELDS = [
+    { col: "employee_number",        note: "REQUIRED — existing system ID (e.g. EMP-100). Used to find the employee.", required: true },
+    { col: "passport_number",        note: "Passport document number — checked for duplicates" },
+    { col: "full_name",              note: "Employee's full name" },
+    { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
+    { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
+    { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
+    { col: "visa_stamp_expiry",      note: "Date format: YYYY-MM-DD" },
+    { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
+    { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
+    { col: "medical_expiry",         note: "Date format: YYYY-MM-DD — renewed yearly" },
+  ];
+
+  const fields = mode === "create" ? CREATE_FIELDS : UPDATE_FIELDS;
 
   return (
-    <div style={{ background: C.pageBg, minHeight: "100vh", color: C.text, fontFamily: "'DM Mono', monospace" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-
-      {/* Header */}
-      <div style={{ background: C.bg, borderBottom: `1px solid ${C.border}`, padding: "0 32px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24, height: 56 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 8, height: 8, background: C.accent, borderRadius: 2 }} />
-            <span style={{ color: C.text, fontSize: 13, fontWeight: 700, letterSpacing: "0.12em" }}>WORK PERMIT TRACKER</span>
-          </div>
-          <div style={{ width: 1, height: 24, background: C.border }} />
-          <span style={{ color: C.textMuted, fontSize: 11, letterSpacing: "0.08em" }}>EXPATRIATE COMPLIANCE MANAGEMENT</span>
-          <div style={{ flex: 1 }} />
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", boxShadow: "0 0 8px rgba(22,163,74,0.5)" }} />
-          <span style={{ color: C.textMuted, fontSize: 11 }}>LIVE</span>
-        </div>
+    <Modal wide title="CSV Import" onClose={onClose}>
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: 0, background: C.borderLight, padding: 3, borderRadius: 10, width: "fit-content", marginBottom: 20 }}>
+        {[
+          { key: "create", label: "➕ Add New Employees" },
+          { key: "update", label: "✏️ Update Existing" },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => switchMode(key)} style={{
+            background: mode === key ? C.cardBg : "transparent",
+            color: mode === key ? C.text : C.textSub,
+            border: "none", padding: "8px 20px", cursor: "pointer",
+            borderRadius: 8, fontFamily: C.sans, fontSize: 13,
+            fontWeight: mode === key ? 600 : 400,
+            boxShadow: mode === key ? "0 1px 6px rgba(0,0,0,0.1)" : "none",
+            transition: "all 0.15s",
+          }}>{label}</button>
+        ))}
       </div>
 
-      {/* Body */}
+      <div style={{ marginBottom: 20 }}>
+        {/* How it works */}
+        <div style={{ background: mode === "create" ? "#f0fdf4" : "#eff6ff", border: `1px solid ${mode === "create" ? "#bbf7d0" : "#bfdbfe"}`, borderRadius: 9, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ color: mode === "create" ? "#16a34a" : "#1d4ed8", fontFamily: C.sans, fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+            {mode === "create" ? "Adding new employees" : "Updating existing employees"}
+          </div>
+          <div style={{ color: mode === "create" ? "#166534" : "#1e40af", fontFamily: C.sans, fontSize: 12, lineHeight: 1.6 }}>
+            {mode === "create"
+              ? <>Each row creates one <strong>new employee</strong>. Employee numbers are <strong>auto-generated</strong> by the system. Use the exact employer and site names as they appear in the system. Duplicate passport numbers are rejected.</>
+              : <>Each row updates one <strong>existing employee</strong>. <strong>employee_number</strong> is the lookup key — copy it from the Employees tab. It does <em>not</em> change the employee's number. Leave any column blank to keep its current value.</>
+            }
+          </div>
+        </div>
+
+        {/* Field reference */}
+        <div style={{ background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ padding: "8px 14px", borderBottom: `1px solid ${C.border}`, background: C.cardBg }}>
+            <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>Column Reference</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+            {fields.map(({ col, note, required }, i) => (
+              <div key={col} style={{ display: "flex", gap: 10, padding: "7px 14px", borderBottom: i < fields.length - 1 ? `1px solid ${C.borderLight}` : "none", alignItems: "flex-start", background: required ? "#fefce8" : "transparent" }}>
+                <span style={{ fontFamily: C.mono, fontSize: 11, color: required ? "#d97706" : C.accent, whiteSpace: "nowrap", fontWeight: 600, minWidth: 170 }}>{col}{required ? " *" : ""}</span>
+                <span style={{ fontFamily: C.sans, fontSize: 11, color: C.textSub, lineHeight: 1.4 }}>{note}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={downloadTemplate} style={{
+          background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`,
+          padding: "7px 16px", borderRadius: 8, cursor: "pointer",
+          fontFamily: C.sans, fontSize: 12, fontWeight: 500,
+        }}>
+          Download Template CSV
+        </button>
+      </div>
+
+      <div style={{ background: C.pageBg, border: `2px dashed ${C.border}`, borderRadius: 10, padding: "24px", textAlign: "center", marginBottom: 16 }}>
+        <input type="file" accept=".csv" onChange={e => { setFile(e.target.files[0]); setResult(null); }} style={{ display: "none" }} id="csv-upload" />
+        <label htmlFor="csv-upload" style={{ cursor: "pointer" }}>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, marginBottom: 8 }}>
+            {file ? `✓ ${file.name}` : "Click to select CSV file"}
+          </div>
+          <div style={{
+            display: "inline-block", background: C.cardBg, border: `1px solid ${C.border}`,
+            padding: "7px 18px", borderRadius: 8, color: C.textSub, fontSize: 12, fontFamily: C.sans, fontWeight: 500,
+          }}>Browse</div>
+        </label>
+      </div>
+
+      {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+      {result && (
+        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>✓ Import complete</div>
+          {mode === "create" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ color: C.textSub, fontSize: 12, fontFamily: C.sans }}>Created: <strong style={{ color: "#16a34a" }}>{result.created}</strong> employees</div>
+              {result.skipped > 0 && <div style={{ color: "#d97706", fontSize: 12, fontFamily: C.sans }}>Skipped: <strong>{result.skipped}</strong> (quota full or duplicate passport)</div>}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ color: C.textSub, fontSize: 12, fontFamily: C.sans }}>Updated: <strong style={{ color: "#16a34a" }}>{result.updated}</strong> employees</div>
+              {result.not_found?.length > 0 && <div style={{ color: "#d97706", fontSize: 12, fontFamily: C.sans }}>Not found: {result.not_found.join(", ")}</div>}
+            </div>
+          )}
+          {result.errors?.length > 0 && (
+            <div style={{ marginTop: 8, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 7, padding: "8px 12px" }}>
+              <div style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Errors ({result.errors.length})</div>
+              {result.errors.map((e, i) => <div key={i} style={{ color: "#dc2626", fontSize: 11, fontFamily: C.mono }}>{e}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>
+          {result ? "Close" : "Cancel"}
+        </button>
+        {!result && (
+          <button onClick={handleUpload} disabled={!file || loading} style={{
+            background: C.accent, color: "#fff", border: "none",
+            padding: "9px 24px", borderRadius: 8, cursor: (!file || loading) ? "not-allowed" : "pointer",
+            fontFamily: C.sans, fontSize: 13, fontWeight: 600, opacity: (!file || loading) ? 0.6 : 1,
+          }}>
+            {loading ? "Uploading..." : mode === "create" ? "Upload & Create" : "Upload & Update"}
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+// ── Users Management Modal ────────────────────────────────
+const UsersModal = ({ onClose, currentUserId }) => {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ username: "", password: "", is_admin: false });
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPw, setResetPw] = useState("");
+
+  const loadUsers = async () => {
+    setLoading(true);
+    const res = await apiFetch(`${API}/auth/users`);
+    const data = await res.json();
+    setUsers(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setError(null); setSaving(true);
+    const res = await apiFetch(`${API}/auth/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    const data = await res.json();
+    if (!res.ok) { setError(data.detail || "Error creating user"); }
+    else { setForm({ username: "", password: "", is_admin: false }); loadUsers(); }
+    setSaving(false);
+  };
+
+  const handleToggle = async (user, field) => {
+    const res = await apiFetch(`${API}/auth/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: !user[field] }),
+    });
+    if (res.ok) loadUsers();
+    else { const d = await res.json().catch(() => ({})); setError(d.detail || "Error"); }
+  };
+
+  const handleDelete = async (userId) => {
+    const res = await apiFetch(`${API}/auth/users/${userId}`, { method: "DELETE" });
+    if (res.ok) loadUsers();
+    else { const d = await res.json().catch(() => ({})); setError(d.detail || "Error deleting user"); }
+  };
+
+  const handleResetPassword = async (userId) => {
+    if (!resetPw.trim()) return;
+    const res = await apiFetch(`${API}/auth/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: resetPw }),
+    });
+    if (res.ok) { setResetTarget(null); setResetPw(""); }
+    else { const d = await res.json().catch(() => ({})); setError(d.detail || "Error resetting password"); }
+  };
+
+  const btnStyle = (active, color) => ({
+    background: active ? `${color}15` : C.pageBg,
+    color: active ? color : C.textSub,
+    border: `1px solid ${active ? color + "40" : C.border}`,
+    padding: "3px 10px", borderRadius: 6, cursor: "pointer",
+    fontFamily: C.sans, fontSize: 11, fontWeight: 600,
+  });
+
+  return (
+    <Modal title="User Management" onClose={onClose} wide>
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16 }}>
+          {error} <button onClick={() => setError(null)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontWeight: 700 }}>×</button>
+        </div>
+      )}
+
+      {/* Create user form */}
+      <div style={{ background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px", marginBottom: 20 }}>
+        <div style={{ color: C.textSub, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 14 }}>Add New User</div>
+        <form onSubmit={handleCreate}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Username</label>
+              <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                required style={inputStyle(false)} placeholder="username" />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Password</label>
+              <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                required style={inputStyle(false)} placeholder="••••••••" />
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={form.is_admin} onChange={e => setForm(f => ({ ...f, is_admin: e.target.checked }))}
+                style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <span style={{ color: C.textSub, fontSize: 13, fontFamily: C.sans }}>Grant admin access</span>
+            </label>
+            <button type="submit" disabled={saving} style={{
+              background: C.accent, color: "#fff", border: "none",
+              padding: "9px 24px", borderRadius: 8, cursor: saving ? "not-allowed" : "pointer",
+              fontFamily: C.sans, fontSize: 13, fontWeight: 600, opacity: saving ? 0.7 : 1,
+            }}>
+              {saving ? "Creating..." : "Create User"}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* User list */}
+      {loading ? (
+        <div style={{ color: C.textMuted, fontSize: 13, textAlign: "center", padding: "20px 0" }}>Loading...</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {users.map(u => (
+            <div key={u.id} style={{
+              display: "flex", alignItems: "center", gap: 12,
+              background: C.pageBg, border: `1px solid ${C.border}`,
+              borderRadius: 10, padding: "12px 16px",
+              opacity: u.is_active ? 1 : 0.6,
+            }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ color: C.text, fontFamily: C.mono, fontSize: 13, fontWeight: 600 }}>{u.username}</span>
+                {u.id === currentUserId && <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, marginLeft: 8 }}>(you)</span>}
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button onClick={() => handleToggle(u, "is_admin")} style={btnStyle(u.is_admin, "#7c3aed")} title="Toggle admin">
+                  {u.is_admin ? "Admin" : "User"}
+                </button>
+                <button onClick={() => handleToggle(u, "is_active")} style={btnStyle(u.is_active, "#16a34a")} title="Toggle active">
+                  {u.is_active ? "Active" : "Inactive"}
+                </button>
+                {resetTarget === u.id ? (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="password" value={resetPw} onChange={e => setResetPw(e.target.value)}
+                      placeholder="New password" style={{ ...inputStyle(false), width: 130, padding: "5px 8px", fontSize: 12 }} />
+                    <button onClick={() => handleResetPassword(u.id)} style={{ ...btnStyle(true, "#2563eb"), padding: "5px 10px" }}>Save</button>
+                    <button onClick={() => { setResetTarget(null); setResetPw(""); }} style={{ ...btnStyle(false, C.textSub), padding: "5px 10px" }}>✕</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setResetTarget(u.id)} style={btnStyle(false, C.textSub)} title="Reset password">
+                    Reset PW
+                  </button>
+                )}
+                {u.id !== currentUserId && (
+                  <button onClick={() => handleDelete(u.id)} style={{ ...btnStyle(false, "#dc2626"), color: "#dc2626" }} title="Delete user">
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+// ── Login Screen ──────────────────────────────────────────
+const LoginScreen = ({ onLogin }) => {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new URLSearchParams();
+      formData.append("username", username);
+      formData.append("password", password);
+      const res = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.detail || "Login failed");
+      } else {
+        saveToken(data.access_token);
+        onLogin();
+      }
+    } catch {
+      setError("Network error — is the backend running?");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      background: C.pageBg, minHeight: "100vh",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: C.sans,
+    }}>
+      <div style={{
+        background: C.cardBg, border: `1px solid ${C.border}`,
+        borderRadius: 16, padding: "40px 44px", width: 360,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 9,
+            background: `linear-gradient(135deg, ${C.accent}, #b91c1c)`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 2px 10px ${C.accent}40`,
+          }}>
+            <span style={{ color: "#fff", fontSize: 16, fontWeight: 800 }}>W</span>
+          </div>
+          <div>
+            <div style={{ color: C.text, fontSize: 15, fontWeight: 700 }}>DocGuard</div>
+            <div style={{ color: C.textMuted, fontSize: 11 }}>Sign in to continue</div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Username</label>
+            <input
+              type="text" value={username} onChange={e => setUsername(e.target.value)}
+              required autoFocus style={inputStyle(false)}
+              placeholder="admin"
+            />
+          </div>
+          <div style={{ marginBottom: 24 }}>
+            <label style={labelStyle}>Password</label>
+            <input
+              type="password" value={password} onChange={e => setPassword(e.target.value)}
+              required style={inputStyle(false)}
+            />
+          </div>
+          {error && (
+            <div style={{
+              background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626",
+              padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16,
+            }}>
+              {error}
+            </div>
+          )}
+          <button type="submit" disabled={loading} style={{
+            width: "100%", background: C.accent, color: "#fff",
+            border: "none", padding: "11px 0", borderRadius: 9,
+            fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.7 : 1, fontFamily: C.sans,
+          }}>
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ── Reports ────────────────────────────────────────────────
+const DOC_STATUS_FIELDS = [
+  { key: "passport_status",        expKey: "passport_expiry",        label: "Passport" },
+  { key: "visa_stamp_status",      expKey: "visa_stamp_expiry",      label: "Visa Stamp" },
+  { key: "insurance_status",       expKey: "insurance_expiry",       label: "Insurance" },
+  { key: "work_permit_fee_status", expKey: "work_permit_fee_expiry", label: "WPF" },
+  { key: "medical_status",         expKey: "medical_expiry",         label: "Medical" },
+];
+
+function calcComplianceScore(employees) {
+  let total = 0, valid = 0;
+  for (const emp of employees) {
+    for (const { key, expKey } of DOC_STATUS_FIELDS) {
+      if (emp[expKey]) { total++; if (emp[key]?.status === "Valid") valid++; }
+    }
+  }
+  return total === 0 ? 100 : Math.round(valid / total * 100);
+}
+
+function pdfStatusStyle(status) {
+  if (status === "Valid")    return { fillColor: [240,253,244], textColor: [22,163,74],   fontStyle: "bold" };
+  if (status === "Warning")  return { fillColor: [255,251,235], textColor: [217,119,6],   fontStyle: "bold" };
+  if (status === "Critical") return { fillColor: [254,242,242], textColor: [220,38,38],   fontStyle: "bold" };
+  if (status === "Expired")  return { fillColor: [241,245,249], textColor: [100,116,139], fontStyle: "bold" };
+  return { fillColor: [248,250,252], textColor: [148,163,184] };
+}
+
+function pdfHeader(doc, title, subtitle, landscape) {
+  const w = landscape ? 297 : 210;
+  const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, w, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14); doc.setFont("helvetica", "bold");
+  doc.text(title, 14, 10);
+  doc.setFontSize(10); doc.setFont("helvetica", "normal");
+  doc.text(subtitle, 14, 17);
+  doc.setFontSize(9);
+  doc.text(`Generated: ${today}`, w - 57, 17);
+  return today;
+}
+
+function exportCompliancePDF(employees, employerName) {
+  // eslint-disable-next-line new-cap
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const today = pdfHeader(doc, "COMPLIANCE REPORT", employerName || "All Employers", true);
+  const score = calcComplianceScore(employees);
+  const expired  = employees.reduce((n, e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Expired").length, 0);
+  const critical = employees.reduce((n, e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Critical").length, 0);
+  const warning  = employees.reduce((n, e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Warning").length, 0);
+
+  // Summary bar
+  doc.setFillColor(241, 245, 249);
+  doc.rect(0, 22, 297, 14, "F");
+  const sumItems = [
+    { label: "EMPLOYEES",        value: String(employees.length), color: [15,23,42] },
+    { label: "COMPLIANCE SCORE", value: `${score}%`,              color: score >= 80 ? [22,163,74] : score >= 60 ? [217,119,6] : [220,38,38] },
+    { label: "EXPIRED",          value: String(expired),          color: expired  > 0 ? [100,116,139] : [22,163,74] },
+    { label: "CRITICAL",         value: String(critical),         color: critical > 0 ? [220,38,38]   : [22,163,74] },
+    { label: "WARNING",          value: String(warning),          color: warning  > 0 ? [217,119,6]   : [22,163,74] },
+  ];
+  let sx = 14;
+  for (const { label, value, color } of sumItems) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...color);
+    doc.text(value, sx, 31);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text(label, sx, 34);
+    sx += 56;
+  }
+
+  // Build rows grouped by site
+  const bySite = {};
+  for (const emp of employees) {
+    const k = emp.site_name; if (!bySite[k]) bySite[k] = []; bySite[k].push(emp);
+  }
+  const allRows = [];
+  const sectionHeaders = [];
+  let rowIdx = 0;
+  for (const [siteName, emps] of Object.entries(bySite)) {
+    sectionHeaders.push({ text: `${employerName ? "" : emps[0]?.employer_name + " — "}${siteName}`, beforeRow: rowIdx });
+    for (const [i, emp] of emps.entries()) {
+      allRows.push([
+        String(i + 1), emp.employee_number, emp.full_name,
+        emp.passport_number || "—", emp.nationality || "—", emp.job_title || "—",
+        emp.passport_status?.status || "—",
+        emp.visa_stamp_status?.status || "—",
+        emp.insurance_status?.status || "—",
+        emp.work_permit_fee_status?.status || "—",
+        emp.medical_status?.status || "—",
+      ]);
+      rowIdx++;
+    }
+  }
+
+  autoTable(doc, {
+    startY: 40,
+    head: [["#", "EMP ID", "Name", "Passport No.", "Nationality", "Job Title", "Passport", "Visa Stamp", "Insurance", "WPF", "Medical"]],
+    body: allRows,
+    styles: { fontSize: 7.5, cellPadding: 2, font: "helvetica" },
+    headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold", fontSize: 8 },
+    columnStyles: { 0:{cellWidth:8}, 1:{cellWidth:20}, 2:{cellWidth:36}, 3:{cellWidth:24}, 4:{cellWidth:20}, 5:{cellWidth:22}, 6:{cellWidth:20}, 7:{cellWidth:20}, 8:{cellWidth:20}, 9:{cellWidth:15}, 10:{cellWidth:17} },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index >= 6) {
+        const s = pdfStatusStyle(d.cell.raw);
+        d.cell.styles.fillColor = s.fillColor; d.cell.styles.textColor = s.textColor; d.cell.styles.fontStyle = s.fontStyle;
+      }
+    },
+    willDrawCell: (d) => {
+      if (d.section === "body") {
+        const sh = sectionHeaders.find(h => h.beforeRow === d.row.index);
+        if (sh && d.column.index === 0) {
+          const { doc: pdoc, cell } = d;
+          pdoc.setFillColor(226, 232, 240); pdoc.rect(cell.x - 1, cell.y - 6, 282, 7, "F");
+          pdoc.setFontSize(8); pdoc.setFont("helvetica", "bold"); pdoc.setTextColor(71, 85, 105);
+          pdoc.text(sh.text.toUpperCase(), cell.x + 1, cell.y - 1);
+        }
+      }
+    },
+    didDrawPage: (d) => {
+      doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${doc.getCurrentPageInfo().pageNumber}`, d.settings.margin.left, doc.internal.pageSize.height - 5);
+    },
+  });
+  doc.save(`Compliance_${(employerName || "All").replace(/\s+/g, "_")}_${today.replace(/\s+/g, "-")}.pdf`);
+}
+
+function exportExpiryPDF(alerts, employerName) {
+  // eslint-disable-next-line new-cap
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const today = pdfHeader(doc, "EXPIRY PIPELINE REPORT", employerName || "All Employers", true);
+  autoTable(doc, {
+    startY: 28,
+    head: [["Employer", "Site", "Emp ID", "Full Name", "Document", "Expiry Date", "Days", "Status"]],
+    body: alerts.map(a => [
+      a.employer_name, a.site_name, a.employee_number, a.full_name,
+      a.expiry_type, a.expiry_date,
+      a.days_remaining < 0 ? `${a.days_remaining}d` : `+${a.days_remaining}d`,
+      a.status,
+    ]),
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold" },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index === 7) {
+        const s = pdfStatusStyle(d.cell.raw); d.cell.styles.fillColor = s.fillColor; d.cell.styles.textColor = s.textColor; d.cell.styles.fontStyle = s.fontStyle;
+      }
+    },
+  });
+  doc.save(`ExpiryPipeline_${today.replace(/\s+/g, "-")}.pdf`);
+}
+
+function exportQuotaPDF(sites) {
+  // eslint-disable-next-line new-cap
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const today = pdfHeader(doc, "SITE QUOTA REPORT", "All Sites", false);
+  autoTable(doc, {
+    startY: 28,
+    head: [["Employer", "Site", "Quota", "Used", "Available", "Utilization"]],
+    body: sites.map(s => [s.employer_name, s.site_name, s.total_quota_slots, s.used_slots, s.available_slots, `${(s.quota_utilisation_pct || 0).toFixed(1)}%`]),
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold" },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index === 5) {
+        const pct = parseFloat(d.cell.raw);
+        d.cell.styles.fontStyle = "bold";
+        d.cell.styles.textColor = pct >= 90 ? [220,38,38] : pct >= 75 ? [217,119,6] : [22,163,74];
+      }
+    },
+  });
+  doc.save(`SiteQuota_${today.replace(/\s+/g, "-")}.pdf`);
+}
+
+function exportMissingPDF(alerts, employerName) {
+  // eslint-disable-next-line new-cap
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const today = pdfHeader(doc, "MISSING DOCUMENTS REPORT", employerName || "All Employers", true);
+  const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+  autoTable(doc, {
+    startY: 28,
+    head: [["Employer","Site","Emp ID","Full Name","Passport","Visa Stamp","Insurance","WPF","Medical","Missing"]],
+    body: alerts.map(r => [
+      r.employer_name, r.site_name, r.employee_number, r.full_name,
+      ...ALL_FIELDS.map(f => r.missing_fields.includes(f) ? "MISSING" : "SET"),
+      `${r.missing_fields.length}/5`,
+    ]),
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold" },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index >= 4 && d.column.index <= 8) {
+        if (d.cell.raw === "MISSING") { d.cell.styles.fillColor = [254,242,242]; d.cell.styles.textColor = [220,38,38]; d.cell.styles.fontStyle = "bold"; }
+        else { d.cell.styles.fillColor = [240,253,244]; d.cell.styles.textColor = [22,163,74]; }
+      }
+    },
+  });
+  doc.save(`MissingDocs_${today.replace(/\s+/g, "-")}.pdf`);
+}
+
+function exportReportPDF(reportData, employerName) {
+  if (reportData.type === "compliance" || reportData.type === "noncompliant") exportCompliancePDF(reportData.employees, employerName);
+  else if (reportData.type === "expiry") exportExpiryPDF(reportData.alerts, employerName);
+  else if (reportData.type === "missing") exportMissingPDF(reportData.alerts, employerName);
+  else if (reportData.type === "quota") exportQuotaPDF(reportData.sites);
+}
+
+function exportReportExcel(reportData, employerName) {
+  const wb = XLSX.utils.book_new();
+  const today = new Date().toLocaleDateString("en-GB");
+
+  if (reportData.type === "compliance" || reportData.type === "noncompliant") {
+    const { employees } = reportData;
+    const score = calcComplianceScore(employees);
+    const summaryWs = XLSX.utils.aoa_to_sheet([
+      ["COMPLIANCE REPORT"],
+      ["Employer:", employerName || "All Employers"],
+      ["Generated:", today],
+      [],
+      ["Total Employees:", employees.length],
+      ["Compliance Score:", `${score}%`],
+      ["Expired docs:", employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Expired").length, 0)],
+      ["Critical docs:", employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Critical").length, 0)],
+      ["Warning docs:", employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Warning").length, 0)],
+    ]);
+    summaryWs["!cols"] = [{ wch: 22 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
+
+    const headers = ["Employer","Site","Emp ID","Full Name","Passport No.","Nationality","Job Title","Passport Status","Passport Expiry","Visa Stamp Status","Visa Stamp Expiry","Insurance Status","Insurance Expiry","WPF Status","WPF Expiry","Medical Status","Medical Expiry"];
+    const rows = employees.map(emp => [
+      emp.employer_name, emp.site_name, emp.employee_number, emp.full_name,
+      emp.passport_number || "", emp.nationality || "", emp.job_title || "",
+      emp.passport_status?.status || "", emp.passport_expiry || "",
+      emp.visa_stamp_status?.status || "", emp.visa_stamp_expiry || "",
+      emp.insurance_status?.status || "", emp.insurance_expiry || "",
+      emp.work_permit_fee_status?.status || "", emp.work_permit_fee_expiry || "",
+      emp.medical_status?.status || "", emp.medical_expiry || "",
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [20,22,14,28,18,16,20,16,14,16,14,16,14,14,12,14,12].map(w => ({ wch: w }));
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+
+  } else if (reportData.type === "expiry") {
+    const headers = ["Employer","Site","Emp ID","Full Name","Document","Expiry Date","Days Remaining","Status"];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...reportData.alerts.map(a => [a.employer_name, a.site_name, a.employee_number, a.full_name, a.expiry_type, a.expiry_date, a.days_remaining, a.status])]);
+    ws["!cols"] = [20,22,14,28,16,14,16,12].map(w => ({ wch: w }));
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws, "Expiry Alerts");
+
+  } else if (reportData.type === "missing") {
+    const headers = ["Employer","Site","Emp ID","Full Name","Passport","Visa Stamp","Insurance","Work Permit Fee","Medical","Missing Count"];
+    const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...reportData.alerts.map(r => [
+      r.employer_name, r.site_name, r.employee_number, r.full_name,
+      ...ALL_FIELDS.map(f => r.missing_fields.includes(f) ? "MISSING" : "SET"),
+      `${r.missing_fields.length}/5`,
+    ])]);
+    ws["!cols"] = [20,20,14,28,10,12,12,16,10,14].map(w => ({ wch: w }));
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws, "Missing Documents");
+
+  } else if (reportData.type === "quota") {
+    const headers = ["Employer","Site","Total Quota","Used Slots","Available","Utilization %"];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...reportData.sites.map(s => [s.employer_name, s.site_name, s.total_quota_slots, s.used_slots, s.available_slots, `${(s.quota_utilisation_pct || 0).toFixed(1)}%`])]);
+    ws["!cols"] = [24,24,14,12,12,14].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, "Site Quota");
+  }
+
+  XLSX.writeFile(wb, `WPTracker_Report_${today.replace(/\//g,"-")}.xlsx`);
+}
+
+const REPORT_TYPES = [
+  { value: "compliance",   label: "Employer Compliance Report" },
+  { value: "expiry",       label: "Expiry Pipeline Report" },
+  { value: "noncompliant", label: "Non-Compliant Employees" },
+  { value: "missing",      label: "Missing Documents Report" },
+  { value: "quota",        label: "Site Quota Report" },
+];
+
+const ReportPreview = ({ data }) => {
+  if (data.type === "compliance" || data.type === "noncompliant") {
+    const { employees } = data;
+    const score    = calcComplianceScore(employees);
+    const expired  = employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Expired").length, 0);
+    const critical = employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Critical").length, 0);
+    const warning  = employees.reduce((n,e) => n + DOC_STATUS_FIELDS.filter(f => e[f.key]?.status === "Warning").length, 0);
+    const bySite = {};
+    for (const emp of employees) {
+      const k = `${emp.employer_name} — ${emp.site_name}`;
+      if (!bySite[k]) bySite[k] = []; bySite[k].push(emp);
+    }
+    return (
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: "#f8fafc" }}>
+          {[
+            { label: "Employees",        value: employees.length, color: C.text },
+            { label: "Compliance Score", value: `${score}%`,      color: score >= 80 ? "#16a34a" : score >= 60 ? "#d97706" : "#dc2626" },
+            { label: "Expired",          value: expired,           color: expired  > 0 ? "#6b7280" : "#16a34a" },
+            { label: "Critical",         value: critical,          color: critical > 0 ? "#dc2626" : "#16a34a" },
+            { label: "Warning",          value: warning,           color: warning  > 0 ? "#d97706" : "#16a34a" },
+          ].map((s, i) => (
+            <div key={i} style={{ flex: 1, padding: "16px 20px", borderRight: `1px solid ${C.border}` }}>
+              <div style={{ fontFamily: C.sans, fontSize: 22, fontWeight: 700, color: s.color }}>{s.value}</div>
+              <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textSub, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {Object.entries(bySite).map(([siteName, emps]) => (
+          <div key={siteName}>
+            <div style={{ padding: "9px 20px", background: "#f1f5f9", borderBottom: `1px solid ${C.border}`, fontFamily: C.sans, fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {siteName} <span style={{ fontWeight: 400 }}>({emps.length})</span>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    {["Emp ID","Name","Passport No.","Nationality","Passport","Visa Stamp","Insurance","WPF","Medical"].map(h => (
+                      <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {emps.map(emp => (
+                    <tr key={emp.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                      <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{emp.employee_number}</td>
+                      <td style={{ padding: "8px 12px", color: C.text, fontWeight: 500, whiteSpace: "nowrap" }}>{emp.full_name}</td>
+                      <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{emp.passport_number || "—"}</td>
+                      <td style={{ padding: "8px 12px", color: C.textSub }}>{emp.nationality || "—"}</td>
+                      {DOC_STATUS_FIELDS.map(f => {
+                        const s = emp[f.key]?.status;
+                        const cfg = STATUS_CONFIG[s];
+                        return (
+                          <td key={f.key} style={{ padding: "6px 12px" }}>
+                            {s ? (
+                              <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: cfg?.bg || "#f8fafc", color: cfg?.color || C.textMuted, fontWeight: 600, fontSize: 10, letterSpacing: "0.05em" }}>
+                                {cfg?.label || s}
+                              </span>
+                            ) : <span style={{ color: C.textMuted }}>—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+        {employees.length === 0 && <div style={{ padding: 40, textAlign: "center", fontFamily: C.sans, color: C.textMuted }}>No employees found</div>}
+      </div>
+    );
+  }
+
+  if (data.type === "expiry") {
+    const { alerts, summary } = data;
+    const byMonth = {};
+    for (const a of alerts) { const m = a.expiry_date.substring(0, 7); if (!byMonth[m]) byMonth[m] = []; byMonth[m].push(a); }
+    return (
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: "#f8fafc" }}>
+          {[{ label: "Total Alerts", value: summary.total }, { label: "Expired", value: summary.expired }, { label: "Critical", value: summary.critical }, { label: "Warning", value: summary.warning }].map((s, i) => (
+            <div key={i} style={{ flex: 1, padding: "16px 20px", borderRight: `1px solid ${C.border}` }}>
+              <div style={{ fontFamily: C.sans, fontSize: 22, fontWeight: 700, color: C.text }}>{s.value}</div>
+              <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textSub, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {Object.entries(byMonth).map(([month, monthAlerts]) => {
+          const label = new Date(month + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+          return (
+            <div key={month}>
+              <div style={{ padding: "9px 20px", background: "#f1f5f9", borderBottom: `1px solid ${C.border}`, fontFamily: C.sans, fontSize: 11, fontWeight: 700, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                {label} <span style={{ fontWeight: 400 }}>({monthAlerts.length} documents)</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      {["Employer","Site","Emp ID","Name","Document","Expiry Date","Days","Status"].map(h => (
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthAlerts.map((a, i) => {
+                      const cfg = STATUS_CONFIG[a.status];
+                      return (
+                        <tr key={i} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                          <td style={{ padding: "8px 12px", color: C.textSub }}>{a.employer_name}</td>
+                          <td style={{ padding: "8px 12px", color: C.textSub }}>{a.site_name}</td>
+                          <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{a.employee_number}</td>
+                          <td style={{ padding: "8px 12px", color: C.text, fontWeight: 500, whiteSpace: "nowrap" }}>{a.full_name}</td>
+                          <td style={{ padding: "8px 12px", color: C.textSub }}>{a.expiry_type}</td>
+                          <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{a.expiry_date}</td>
+                          <td style={{ padding: "8px 12px", fontFamily: C.mono, fontSize: 11, fontWeight: 600, color: a.days_remaining < 0 ? "#6b7280" : a.days_remaining < 15 ? "#dc2626" : a.days_remaining < 30 ? "#ea580c" : "#d97706" }}>
+                            {a.days_remaining < 0 ? `${a.days_remaining}d` : `+${a.days_remaining}d`}
+                          </td>
+                          <td style={{ padding: "6px 12px" }}>
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: cfg?.bg || "#f8fafc", color: cfg?.color || C.textMuted, fontWeight: 600, fontSize: 10, letterSpacing: "0.05em" }}>
+                              {cfg?.label || a.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+        {alerts.length === 0 && <div style={{ padding: 40, textAlign: "center", fontFamily: C.sans, color: C.textMuted }}>No alerts in this window</div>}
+      </div>
+    );
+  }
+
+  if (data.type === "missing") {
+    const { alerts } = data;
+    const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+    return (
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, background: "#f0f9ff" }}>
+          <span style={{ fontFamily: C.sans, fontSize: 13, fontWeight: 700, color: "#0891b2" }}>{alerts.length} employees with missing document information</span>
+          <span style={{ fontFamily: C.sans, fontSize: 12, color: C.textSub, marginLeft: 12 }}>Sorted by number of missing fields (most incomplete first)</span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {["Employer","Site","Emp ID","Name","Passport","Visa Stamp","Insurance","Work Permit Fee","Medical","Missing Count"].map(h => (
+                <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {alerts.map(row => (
+              <tr key={row.employee_id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                <td style={{ padding: "9px 12px", color: C.textSub }}>{row.employer_name}</td>
+                <td style={{ padding: "9px 12px", color: C.textSub }}>{row.site_name}</td>
+                <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{row.employee_number}</td>
+                <td style={{ padding: "9px 12px", color: C.text, fontWeight: 500, whiteSpace: "nowrap" }}>{row.full_name}</td>
+                {ALL_FIELDS.map(f => {
+                  const missing = row.missing_fields.includes(f);
+                  return (
+                    <td key={f} style={{ padding: "6px 12px" }}>
+                      <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: missing ? "#fef2f2" : "#f0fdf4", color: missing ? "#dc2626" : "#16a34a", fontWeight: 600, fontSize: 10 }}>
+                        {missing ? "MISSING" : "SET"}
+                      </span>
+                    </td>
+                  );
+                })}
+                <td style={{ padding: "9px 12px" }}>
+                  <span style={{ fontFamily: C.mono, fontWeight: 700, color: row.missing_fields.length === 5 ? "#dc2626" : row.missing_fields.length >= 3 ? "#c2410c" : "#a16207" }}>
+                    {row.missing_fields.length}/5
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {alerts.length === 0 && <div style={{ padding: 40, textAlign: "center", fontFamily: C.sans, color: "#16a34a", fontWeight: 600 }}>✓ All employees have complete records</div>}
+      </div>
+    );
+  }
+
+  if (data.type === "quota") {
+    const { sites } = data;
+    return (
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {["Employer","Site","Total Quota","Used","Available","Utilization"].map(h => (
+                <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sites.map(s => {
+              const pct = s.quota_utilisation_pct || 0;
+              const barColor = pct >= 90 ? "#dc2626" : pct >= 75 ? "#d97706" : "#16a34a";
+              return (
+                <tr key={s.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                  <td style={{ padding: "12px 16px", color: C.textSub }}>{s.employer_name}</td>
+                  <td style={{ padding: "12px 16px", color: C.text, fontWeight: 500 }}>{s.site_name}</td>
+                  <td style={{ padding: "12px 16px", color: C.text, fontFamily: C.mono }}>{s.total_quota_slots}</td>
+                  <td style={{ padding: "12px 16px", color: C.text, fontFamily: C.mono }}>{s.used_slots}</td>
+                  <td style={{ padding: "12px 16px", fontFamily: C.mono, fontWeight: 600, color: s.available_slots === 0 ? "#dc2626" : "#16a34a" }}>{s.available_slots}</td>
+                  <td style={{ padding: "12px 16px", minWidth: 140 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: barColor, borderRadius: 3 }} />
+                      </div>
+                      <span style={{ fontFamily: C.mono, fontSize: 11, fontWeight: 600, color: barColor, minWidth: 40 }}>{pct.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {sites.length === 0 && <div style={{ padding: 40, textAlign: "center", fontFamily: C.sans, color: C.textMuted }}>No sites found</div>}
+      </div>
+    );
+  }
+  return null;
+};
+
+const ReportsTab = () => {
+  const [reportType, setReportType] = useState("compliance");
+  const [employerId, setEmployerId] = useState("");
+  const [expiryDays, setExpiryDays] = useState(60);
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const { data: employers } = useFetch(`${API}/employers`);
+  const selectedEmployer = employers?.find(e => String(e.id) === employerId);
+
+  const generate = async () => {
+    setLoading(true); setErr(null); setReportData(null);
+    try {
+      if (reportType === "compliance" || reportType === "noncompliant") {
+        const empUrl = employerId
+          ? `${API}/employees?employer_id=${employerId}&limit=500`
+          : `${API}/employees?limit=500`;
+        const [empRes, empListRes, siteRes] = await Promise.all([
+          apiFetch(empUrl).then(r => r.json()),
+          apiFetch(`${API}/employers`).then(r => r.json()),
+          apiFetch(`${API}/sites`).then(r => r.json()),
+        ]);
+        const empMap  = Object.fromEntries(empListRes.map(e => [e.id, e.name]));
+        const siteMap = Object.fromEntries(siteRes.map(s => [s.id, s.site_name]));
+        let employees = empRes.map(e => ({
+          ...e,
+          employer_name: empMap[e.employer_id]  || `Employer ${e.employer_id}`,
+          site_name:     siteMap[e.site_id]     || `Site ${e.site_id}`,
+        }));
+        if (reportType === "noncompliant") {
+          employees = employees.filter(emp => DOC_STATUS_FIELDS.some(f => ["Expired","Critical"].includes(emp[f.key]?.status)));
+        }
+        setReportData({ type: reportType, employees });
+      } else if (reportType === "expiry") {
+        const url = employerId
+          ? `${API}/alerts/expiring?days=${expiryDays}&employer_id=${employerId}`
+          : `${API}/alerts/expiring?days=${expiryDays}`;
+        const data = await apiFetch(url).then(r => r.json());
+        setReportData({ type: "expiry", alerts: data.alerts, summary: data });
+      } else if (reportType === "missing") {
+        const url = employerId ? `${API}/alerts/missing?employer_id=${employerId}` : `${API}/alerts/missing`;
+        const data = await apiFetch(url).then(r => r.json());
+        setReportData({ type: "missing", alerts: data.alerts, total: data.total });
+      } else if (reportType === "quota") {
+        const url = employerId ? `${API}/sites?employer_id=${employerId}` : `${API}/sites`;
+        const [siteRes, empListRes] = await Promise.all([
+          apiFetch(url).then(r => r.json()),
+          apiFetch(`${API}/employers`).then(r => r.json()),
+        ]);
+        const empMap = Object.fromEntries(empListRes.map(e => [e.id, e.name]));
+        setReportData({ type: "quota", sites: siteRes.map(s => ({ ...s, employer_name: empMap[s.employer_id] || `Employer ${s.employer_id}` })) });
+      }
+    } catch (e) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  const sel = { fontFamily: C.sans, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text };
+  const lbl = { fontFamily: C.sans, fontSize: 11, fontWeight: 600, color: C.textSub, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" };
+
+  return (
+    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "24px 28px", marginBottom: 20 }}>
+        <div style={{ fontFamily: C.sans, fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 20 }}>Generate Report</div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <label style={lbl}>Report Type</label>
+            <select value={reportType} onChange={e => { setReportType(e.target.value); setReportData(null); }} style={{ ...sel, minWidth: 230 }}>
+              {REPORT_TYPES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Employer</label>
+            <select value={employerId} onChange={e => { setEmployerId(e.target.value); setReportData(null); }} style={{ ...sel, minWidth: 200 }}>
+              <option value="">All Employers</option>
+              {(employers || []).map(e => <option key={e.id} value={String(e.id)}>{e.name}</option>)}
+            </select>
+          </div>
+          {reportType === "expiry" && (
+            <div>
+              <label style={lbl}>Window</label>
+              <select value={expiryDays} onChange={e => { setExpiryDays(Number(e.target.value)); setReportData(null); }} style={sel}>
+                <option value={30}>Next 30 days</option>
+                <option value={60}>Next 60 days</option>
+                <option value={90}>Next 90 days</option>
+                <option value={180}>Next 180 days</option>
+              </select>
+            </div>
+          )}
+          <button onClick={generate} disabled={loading} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 22px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Loading…" : "Generate Preview"}
+          </button>
+          {reportData && (
+            <>
+              <button onClick={() => exportReportPDF(reportData, selectedEmployer?.name)} style={{ background: "#1e293b", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                ↓ Export PDF
+              </button>
+              <button onClick={() => exportReportExcel(reportData, selectedEmployer?.name)} style={{ background: "#166534", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                ↓ Export Excel
+              </button>
+            </>
+          )}
+        </div>
+        {err && <div style={{ marginTop: 12, color: C.accent, fontFamily: C.sans, fontSize: 13 }}>{err}</div>}
+      </div>
+      {reportData && <ReportPreview data={reportData} />}
+    </div>
+  );
+};
+
+// ── Root App ──────────────────────────────────────────────
+export default function App() {
+  const [authed, setAuthed] = useState(!!getToken());
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showUsers, setShowUsers] = useState(false);
+
+  // Register the global unauth handler
+  _onUnauth = () => { clearToken(); setAuthed(false); setCurrentUser(null); };
+
+  useEffect(() => {
+    if (authed) {
+      apiFetch(`${API}/auth/me`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCurrentUser(d); });
+    }
+  }, [authed]);
+
+  const [tab, setTab] = useState("OVERVIEW");
+  const { data: headerStats } = useFetch(`${API}/dashboard/stats`);
+  const criticalCount = headerStats?.total_alerts_critical ?? 0;
+  const expiredCount  = headerStats?.total_alerts_expired  ?? 0;
+  const urgentTotal   = criticalCount + expiredCount;
+
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
+
+  return (
+    <div style={{ background: C.pageBg, minHeight: "100vh", color: C.text, fontFamily: C.sans }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 50,
+        background: "rgba(255,255,255,0.95)",
+        backdropFilter: "blur(12px)",
+        borderBottom: `1px solid ${C.border}`,
+        padding: "0 32px",
+        boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20, height: 62 }}>
+          {/* Brand */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: `linear-gradient(135deg, ${C.accent}, #b91c1c)`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: `0 2px 8px ${C.accent}40`,
+            }}>
+              <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: C.sans }}>D</span>
+            </div>
+            <div>
+              <div style={{ color: C.text, fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                DocGuard
+                {urgentTotal > 0 && (
+                  <span style={{
+                    background: "#dc2626", color: "#fff",
+                    fontSize: 10, fontWeight: 700, fontFamily: C.mono,
+                    padding: "1px 7px", borderRadius: 10, marginLeft: 8,
+                    boxShadow: "0 0 8px rgba(220,38,38,0.4)",
+                    verticalAlign: "middle",
+                  }}>{urgentTotal}</span>
+                )}
+              </div>
+              <div style={{ color: C.textMuted, fontSize: 11, letterSpacing: "0.02em", lineHeight: 1 }}>Expatriate Compliance Management <span style={{ fontFamily: C.mono, fontSize: 10, color: C.textMuted, opacity: 0.6 }}>v1.0.0</span></div>
+            </div>
+          </div>
+
+          <div style={{ width: 1, height: 28, background: C.border }} />
+
+          {/* Status */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#16a34a", boxShadow: "0 0 8px rgba(22,163,74,0.5)" }} />
+            <span style={{ color: C.textMuted, fontSize: 12, fontWeight: 500 }}>Live</span>
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* User / Logout */}
+          {currentUser && (
+            <span style={{ color: C.textMuted, fontSize: 12, fontFamily: C.mono }}>{currentUser.username}</span>
+          )}
+          {currentUser?.is_admin && (
+            <button
+              onClick={() => setShowUsers(true)}
+              style={{
+                background: "none", color: C.textSub,
+                border: `1px solid ${C.border}`,
+                padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+                fontFamily: C.sans, fontSize: 12, fontWeight: 500,
+              }}
+            >
+              Users
+            </button>
+          )}
+          <button
+            onClick={() => { clearToken(); setAuthed(false); setCurrentUser(null); }}
+            style={{
+              background: "none", color: C.textSub,
+              border: `1px solid ${C.border}`,
+              padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+              fontFamily: C.sans, fontSize: 12, fontWeight: 500,
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+      {showUsers && <UsersModal onClose={() => setShowUsers(false)} currentUserId={currentUser?.id} />}
+
+      {/* Main content */}
       <div style={{ padding: "28px 32px" }}>
-        <Tabs
-          tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS"]}
-          active={tab}
-          onChange={setTab}
-        />
-        {tab === "OVERVIEW"   && <DashboardTab />}
-        {tab === "ALERTS"     && <AlertsTab />}
-        {tab === "EMPLOYEES"  && <EmployeesTab />}
-        {tab === "EMPLOYERS"  && <EmployersTab />}
+        <Tabs tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS", "REPORTS"]} active={tab} onChange={setTab} />
+        {tab === "OVERVIEW"  && <DashboardTab />}
+        {tab === "ALERTS"    && <AlertsTab />}
+        {tab === "EMPLOYEES" && <EmployeesTab />}
+        {tab === "EMPLOYERS" && <EmployersTab />}
+        {tab === "REPORTS"   && <ReportsTab />}
       </div>
     </div>
   );

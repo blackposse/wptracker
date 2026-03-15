@@ -31,4 +31,5 @@ EXPIRY_FIELDS = [
     ("visa_stamp_expiry",      "Visa Stamp",       30, 90),
     ("insurance_expiry",       "Insurance",        30, 90),
     ("work_permit_fee_expiry", "Work Permit Fee",  15, 30),
+    ("medical_expiry",         "Medical",          30, 60),
 ]

@@ -1,0 +1,63 @@
+version: "3.9"
+
+# ── DocGuard — Production Compose ─────────────────────────
+# Copy this file + .env to each server, then run:
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB:       workpermit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d workpermit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── FastAPI Backend ─────────────────────────────────────
+  api:
+    image: ${DOCKERHUB_USERNAME}/docguard-api:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:    postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/workpermit
+      ADMIN_PASSWORD:  ${ADMIN_PASSWORD}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DOCS_ENABLED:    ${DOCS_ENABLED:-false}
+      DOCS_USERNAME:   ${DOCS_USERNAME:-admin}
+      DOCS_PASSWORD:   ${DOCS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Nginx + Frontend ────────────────────────────────────
+  web:
+    image: ${DOCKERHUB_USERNAME}/docguard-web:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+  # ── Watchtower — auto-pull new images ───────────────────
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: 300        # check every 5 minutes
+      WATCHTOWER_CLEANUP:       "true"     # remove old images after update
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+    command: --interval 300
+
+volumes:
+  postgres_data:

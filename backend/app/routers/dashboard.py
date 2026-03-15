@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, case
 from datetime import date, timedelta
 
 from app.database import get_db
-from app.models.models import Employer, Site, Employee
+from app.models.models import Employer, Site, Employee, User
 from app.schemas.schemas import DashboardStats
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("/stats", response_model=DashboardStats)
-async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     today = date.today()
 
     total_employers = (await db.execute(select(func.count()).select_from(Employer))).scalar()
@@ -62,6 +63,18 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         if used >= site.total_quota_slots:
             sites_at_capacity += 1
 
+    missing_docs_count = (await db.execute(
+        select(func.count()).select_from(Employee).where(
+            or_(
+                Employee.passport_expiry.is_(None),
+                Employee.visa_stamp_expiry.is_(None),
+                Employee.insurance_expiry.is_(None),
+                Employee.work_permit_fee_expiry.is_(None),
+                Employee.medical_expiry.is_(None),
+            )
+        )
+    )).scalar()
+
     return DashboardStats(
         total_employers=total_employers,
         total_sites=total_sites,
@@ -70,4 +83,5 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         total_alerts_warning=warning_count,
         total_alerts_expired=expired_count,
         sites_at_capacity=sites_at_capacity,
+        total_missing_docs=missing_docs_count,
     )

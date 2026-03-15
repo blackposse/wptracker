@@ -4,6 +4,32 @@ from datetime import date, datetime
 from enum import Enum
 
 
+# ── Auth ──────────────────────────────────────────────────
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str
+    is_active: bool
+    is_admin: bool
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    is_admin: bool = False
+
+
+class UserUpdate(BaseModel):
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    password: Optional[str] = None
+
+
 class ExpiryStatus(str, Enum):
     VALID = "Valid"
     WARNING = "Warning"
@@ -52,27 +78,60 @@ class SiteRead(SiteBase):
 class EmployeeBase(BaseModel):
     full_name: str
     employee_number: str
+    passport_number: Optional[str] = None
     nationality: Optional[str] = None
+
     job_title: Optional[str] = None
     passport_expiry: Optional[date] = None
     visa_stamp_expiry: Optional[date] = None
     insurance_expiry: Optional[date] = None
     work_permit_fee_expiry: Optional[date] = None
+    medical_expiry: Optional[date] = None
+    resigned: bool = False
 
 
 class EmployeeCreate(EmployeeBase):
     employer_id: int
     site_id: int
+    employee_number: Optional[str] = None  # auto-generated if not provided
 
 
-class EmployeeUpdate(BaseModel):
+class BulkUpdateRow(BaseModel):
+    employee_number: str
     full_name: Optional[str] = None
+    passport_number: Optional[str] = None
     nationality: Optional[str] = None
     job_title: Optional[str] = None
     passport_expiry: Optional[date] = None
     visa_stamp_expiry: Optional[date] = None
     insurance_expiry: Optional[date] = None
     work_permit_fee_expiry: Optional[date] = None
+    medical_expiry: Optional[date] = None
+
+
+class BulkUpdateResult(BaseModel):
+    updated: int
+    not_found: List[str]
+    errors: List[str]
+
+
+class BulkCreateResult(BaseModel):
+    created: int
+    skipped: int
+    errors: List[str]
+
+
+class EmployeeUpdate(BaseModel):
+    full_name: Optional[str] = None
+    passport_number: Optional[str] = None
+    nationality: Optional[str] = None
+    job_title: Optional[str] = None
+    passport_expiry: Optional[date] = None
+    visa_stamp_expiry: Optional[date] = None
+    insurance_expiry: Optional[date] = None
+    work_permit_fee_expiry: Optional[date] = None
+    medical_expiry: Optional[date] = None
+    resigned: Optional[bool] = None
     note: Optional[str] = None  # optional note for audit log
 
 
@@ -91,6 +150,7 @@ class EmployeeRead(EmployeeBase):
     visa_stamp_status: Optional[ExpiryDetail] = None
     insurance_status: Optional[ExpiryDetail] = None
     work_permit_fee_status: Optional[ExpiryDetail] = None
+    medical_status: Optional[ExpiryDetail] = None
 
 
 # ── Audit Log ─────────────────────────────────────────────
@@ -103,6 +163,7 @@ class AuditLogRead(BaseModel):
     old_value: Optional[str] = None
     new_value: Optional[str] = None
     note: Optional[str] = None
+    changed_by: Optional[str] = None
 
 
 # ── Alerts ────────────────────────────────────────────────
@@ -126,6 +187,21 @@ class AlertsResponse(BaseModel):
     alerts: List[ExpiryAlert]
 
 
+# ── Missing Docs ──────────────────────────────────────────
+class MissingDocAlert(BaseModel):
+    employee_id: int
+    employee_number: str
+    full_name: str
+    employer_name: str
+    site_name: str
+    missing_fields: List[str]
+
+
+class MissingDocResponse(BaseModel):
+    total: int
+    alerts: List[MissingDocAlert]
+
+
 # ── Dashboard Stats ───────────────────────────────────────
 class DashboardStats(BaseModel):
     total_employers: int
@@ -135,3 +211,4 @@ class DashboardStats(BaseModel):
     total_alerts_warning: int
     total_alerts_expired: int
     sites_at_capacity: int
+    total_missing_docs: int

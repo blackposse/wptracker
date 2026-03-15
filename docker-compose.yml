@@ -28,23 +28,15 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/workpermit
+      DOCS_ENABLED: "true"
+      DOCS_USERNAME: "admin"
+      DOCS_PASSWORD: "admin123"
     ports:
       - "8001:8000"
     depends_on:
       db:
         condition: service_healthy   # ← waits for DB health check ✓
 
-  # ── React Frontend ───────────────────────────────────────────────
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    depends_on:
-      api:
-        condition: service_started
 
 volumes:
   postgres_data:
