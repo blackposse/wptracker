@@ -2142,7 +2142,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
       const res = await apiFetch(endpoint, { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) { setError(data.detail || "Upload failed"); }
-      else { setResult(data); onDone(); }
+      else { setResult(data); }
     } catch { setError("Network error"); }
     finally { setLoading(false); }
   };
@@ -2183,7 +2183,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
   const fields = mode === "create" ? CREATE_FIELDS : UPDATE_FIELDS;
 
   return (
-    <Modal wide title="CSV Import" onClose={onClose}>
+    <Modal wide title="CSV Import" onClose={() => result ? onDone() : onClose()}>
       {/* Mode toggle */}
       <div style={{ display: "flex", gap: 0, background: C.borderLight, padding: 3, borderRadius: 10, width: "fit-content", marginBottom: 20 }}>
         {[
@@ -2279,8 +2279,8 @@ const CsvImportModal = ({ onClose, onDone }) => {
       )}
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-        <button onClick={onClose} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>
-          {result ? "Close" : "Cancel"}
+        <button onClick={() => result ? onDone() : onClose()} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>
+          {result ? "Done" : "Cancel"}
         </button>
         {!result && (
           <button onClick={handleUpload} disabled={!file || loading} style={{
