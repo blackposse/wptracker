@@ -297,6 +297,24 @@ async def bulk_update_employees(
             except ValueError:
                 errors.append(f"Row {i} ({emp_num}): invalid value '{raw}' for '{field}'")
 
+        # Handle quota_slot_number — assigns employee to a slot by slot number
+        raw_slot_number = row.get("quota_slot_number", "").strip()
+        if raw_slot_number:
+            if raw_slot_number.lower() == "null":
+                old_slot_id = str(emp.quota_slot_id) if emp.quota_slot_id else None
+                emp.quota_slot_id = None
+                changes.append(("quota_slot_id", old_slot_id, None))
+            else:
+                slot = (await db.execute(select(QuotaSlot).where(QuotaSlot.slot_number == raw_slot_number))).scalar_one_or_none()
+                if not slot:
+                    errors.append(f"Row {i} ({emp_num}): quota slot '{raw_slot_number}' not found")
+                elif slot.site_id != emp.site_id:
+                    errors.append(f"Row {i} ({emp_num}): quota slot '{raw_slot_number}' does not belong to this employee's site")
+                else:
+                    old_slot_id = str(emp.quota_slot_id) if emp.quota_slot_id else None
+                    emp.quota_slot_id = slot.id
+                    changes.append(("quota_slot_id", old_slot_id, raw_slot_number))
+
         # Handle quota_slot_expiry — updates the expiry of the employee's assigned slot
         raw_slot_expiry = row.get("quota_slot_expiry", "").strip()
         if raw_slot_expiry:
