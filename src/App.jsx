@@ -1291,9 +1291,9 @@ const DashboardTab = ({ onNavigate }) => {
       <div className="dg-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
         <StatCard label="Total Employees"   value={stats?.total_employees}       sub={`across ${stats?.total_sites ?? "—"} sites`}       accent="#2563eb" onClick={() => onNavigate("EMPLOYEES")} />
         <StatCard label="Employers"         value={stats?.total_employers}       sub={`${stats?.total_sites ?? "—"} sites total`}         accent="#7c3aed" onClick={() => onNavigate("EMPLOYERS")} />
-        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}     sub="quota full"                                         accent="#a855f7" glow onClick={() => onNavigate("EMPLOYERS")} />
-        <StatCard label="Warning"           value={stats?.total_alerts_warning}  sub="30–90 day window"                                   accent="#d97706" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning",  days: 90 })} />
-        <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within 30 days"                                     accent="#ea580c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
+        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}     sub="quota full"                                         accent="#059669" glow onClick={() => onNavigate("EMPLOYERS")} />
+        <StatCard label="Warning"           value={stats?.total_alerts_warning}  sub="30–90 day window"                                   accent="#ca8a04" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning",  days: 90 })} />
+        <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within 30 days"                                     accent="#f97316" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
         <StatCard label="Expired Docs"      value={stats?.total_alerts_expired}  sub="need immediate action"                              accent="#b91c1c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired",  days: 90 })} />
         <StatCard label="Missing Documents" value={stats?.total_missing_docs}    sub="employees with incomplete records"                  accent="#0891b2" glow onClick={() => onNavigate("ALERTS", { view: "missing",  filter: "All",     days: 60 })} />
       </div>
