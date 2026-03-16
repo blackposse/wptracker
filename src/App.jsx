@@ -147,6 +147,15 @@ function GlobalStyles() {
         0%   { background-position: -200% 0; }
         100% { background-position: 200% 0; }
       }
+      @keyframes cardBgPulse {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .dg-stat-card-gradient {
+        background-size: 300% 300% !important;
+        animation: cardBgPulse 6s ease infinite;
+      }
 
       /* Mobile base */
       @media (max-width: 768px) {
@@ -218,40 +227,52 @@ const StatCard = ({ label, value, sub, accent, glow, onClick }) => {
     requestAnimationFrame(tick);
   }, [value]);
 
+  const a = accent || "#64748b";
+  // Animated gradient background: shifts between white and tinted accent
+  const gradientBg = `linear-gradient(135deg, #ffffff 0%, ${a}18 40%, ${a}10 60%, #ffffff 100%)`;
+
   return (
     <div
+      className="dg-stat-card-gradient"
       onClick={onClick}
       onMouseEnter={onClick ? e => {
-        e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = `0 8px 24px ${accent}28, 0 2px 8px rgba(0,0,0,0.08)`;
-        e.currentTarget.style.borderColor = accent || C.border;
+        e.currentTarget.style.transform = "translateY(-3px) scale(1.015)";
+        e.currentTarget.style.boxShadow = `0 12px 32px ${a}35, 0 2px 8px rgba(0,0,0,0.08)`;
+        e.currentTarget.style.borderColor = a;
       } : undefined}
       onMouseLeave={onClick ? e => {
         e.currentTarget.style.transform = "";
-        e.currentTarget.style.boxShadow = glow && value > 0 ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)` : "0 1px 4px rgba(0,0,0,0.04)";
-        e.currentTarget.style.borderColor = C.border;
+        e.currentTarget.style.boxShadow = `0 4px 20px ${a}20, 0 1px 4px rgba(0,0,0,0.04)`;
+        e.currentTarget.style.borderColor = `${a}40`;
       } : undefined}
       style={{
-        background: C.cardBg,
-        border: `1px solid ${C.border}`,
-        borderRadius: 14,
+        background: gradientBg,
+        border: `1px solid ${a}40`,
+        borderRadius: 16,
         padding: "22px 24px 18px",
         flex: 1, minWidth: 150,
         position: "relative", overflow: "hidden",
-        boxShadow: glow && value > 0
-          ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
-          : "0 1px 4px rgba(0,0,0,0.04)",
-        transition: "box-shadow 0.2s, transform 0.15s, border-color 0.15s",
+        boxShadow: `0 4px 20px ${a}20, 0 1px 4px rgba(0,0,0,0.04)`,
+        transition: "box-shadow 0.2s, transform 0.18s, border-color 0.18s",
         cursor: onClick ? "pointer" : "default",
       }}>
+      {/* Top accent bar */}
       <div style={{
-        position: "absolute", top: 0, left: 0, right: 0, height: 3,
-        background: `linear-gradient(90deg, ${accent || C.border}, ${accent ? accent + "50" : C.border})`,
+        position: "absolute", top: 0, left: 0, right: 0, height: 4,
+        background: `linear-gradient(90deg, ${a}, ${a}80, ${a}40)`,
+        borderRadius: "16px 16px 0 0",
       }} />
-      <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.sans }}>{label}</div>
-      <div style={{ color: glow && value > 0 ? accent : C.text, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono }}>{value != null ? displayed : "—"}</div>
+      {/* Decorative circle glow in corner */}
+      <div style={{
+        position: "absolute", bottom: -20, right: -20,
+        width: 80, height: 80, borderRadius: "50%",
+        background: `radial-gradient(circle, ${a}25 0%, transparent 70%)`,
+        pointerEvents: "none",
+      }} />
+      <div style={{ color: a, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10, fontFamily: C.sans, opacity: 0.85 }}>{label}</div>
+      <div style={{ color: a, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono, textShadow: `0 2px 8px ${a}30` }}>{value != null ? displayed : "—"}</div>
       {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 8, fontFamily: C.sans }}>{sub}</div>}
-      {onClick && <div style={{ color: accent || C.textMuted, fontSize: 11, marginTop: 6, fontFamily: C.sans, opacity: 0.7 }}>Click to view →</div>}
+      {onClick && <div style={{ color: a, fontSize: 11, marginTop: 8, fontFamily: C.sans, fontWeight: 600, opacity: 0.65 }}>Click to view →</div>}
     </div>
   );
 };
@@ -1267,14 +1288,14 @@ const DashboardTab = ({ onNavigate }) => {
   return (
     <div>
       {/* Stat cards row */}
-      <div className="dg-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-        <StatCard label="Total Employees"   value={stats?.total_employees}      sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} onClick={() => onNavigate("EMPLOYEES")} />
-        <StatCard label="Employers"         value={stats?.total_employers}      sub={`${stats?.total_sites ?? "—"} sites total`} accent="#3b82f6" onClick={() => onNavigate("EMPLOYERS")} />
-        <StatCard label="Expired Docs"      value={stats?.total_alerts_expired} sub="need immediate action" accent="#b91c1c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired", days: 90 })} />
-        <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within critical threshold" accent="#dc2626" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
-        <StatCard label="Warning"           value={stats?.total_alerts_warning} sub="30–90 day window" accent="#d97706" onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning", days: 90 })} />
-        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}    sub="quota full" accent="#a855f7" glow onClick={() => onNavigate("EMPLOYERS")} />
-        <StatCard label="Missing Documents" value={stats?.total_missing_docs}   sub="employees with incomplete records" accent="#0891b2" glow onClick={() => onNavigate("ALERTS", { view: "missing", filter: "All", days: 60 })} />
+      <div className="dg-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <StatCard label="Total Employees"   value={stats?.total_employees}       sub={`across ${stats?.total_sites ?? "—"} sites`}       accent="#2563eb" onClick={() => onNavigate("EMPLOYEES")} />
+        <StatCard label="Employers"         value={stats?.total_employers}       sub={`${stats?.total_sites ?? "—"} sites total`}         accent="#7c3aed" onClick={() => onNavigate("EMPLOYERS")} />
+        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}     sub="quota full"                                         accent="#a855f7" glow onClick={() => onNavigate("EMPLOYERS")} />
+        <StatCard label="Warning"           value={stats?.total_alerts_warning}  sub="30–90 day window"                                   accent="#d97706" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning",  days: 90 })} />
+        <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within 30 days"                                     accent="#ea580c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
+        <StatCard label="Expired Docs"      value={stats?.total_alerts_expired}  sub="need immediate action"                              accent="#b91c1c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired",  days: 90 })} />
+        <StatCard label="Missing Documents" value={stats?.total_missing_docs}    sub="employees with incomplete records"                  accent="#0891b2" glow onClick={() => onNavigate("ALERTS", { view: "missing",  filter: "All",     days: 60 })} />
       </div>
 
       {/* Document health grid */}
