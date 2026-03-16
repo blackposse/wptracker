@@ -1315,58 +1315,81 @@ const DashboardTab = ({ onNavigate }) => {
             const worstColor = exp > 0 ? "#b91c1c" : crit > 0 ? "#f97316" : warn > 0 ? "#ca8a04" : "#16a34a";
             const icon = CATEGORY_META[metaKey]?.icon || "•";
             return (
-              <div key={key} className="dg-stat-card-gradient" style={{
-                background: `linear-gradient(135deg, #ffffff 0%, ${worstColor}12 55%, #ffffff 100%)`,
-                border: `1px solid ${worstColor}30`,
-                borderRadius: 14, padding: "18px 18px 14px",
-                boxShadow: `0 4px 16px ${worstColor}10`,
-                position: "relative", overflow: "hidden",
-                transition: "transform 0.15s, box-shadow 0.15s",
+              <div key={key} style={{
+                background: "#fff",
+                borderRadius: 16, overflow: "hidden",
+                boxShadow: `0 2px 12px ${worstColor}14, 0 1px 4px rgba(0,0,0,0.04)`,
+                border: `1px solid ${allClear ? "#e2e8f0" : worstColor + "28"}`,
+                display: "flex", flexDirection: "column",
+                transition: "transform 0.15s, box-shadow 0.2s",
+                cursor: "default",
               }}
-              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${worstColor}22`; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 4px 16px ${worstColor}10`; }}>
-                {/* Top bar in doc-type color */}
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)`, borderRadius: "14px 14px 0 0" }} />
-                {/* Watermark icon */}
-                <div style={{ position: "absolute", right: 10, bottom: 8, fontSize: 44, opacity: 0.06, userSelect: "none", lineHeight: 1 }}>{icon}</div>
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 8px 28px ${worstColor}22, 0 2px 8px rgba(0,0,0,0.06)`; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 2px 12px ${worstColor}14, 0 1px 4px rgba(0,0,0,0.04)`; }}>
 
-                {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-                  <span style={{ fontSize: 17, lineHeight: 1 }}>{icon}</span>
-                  <span style={{ color: color, fontFamily: C.sans, fontSize: 12, fontWeight: 800, letterSpacing: "0.02em" }}>{label.toUpperCase()}</span>
-                  {total > 0 && (
-                    <span style={{ marginLeft: "auto", background: `${worstColor}18`, color: worstColor, fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, border: `1px solid ${worstColor}30` }}>{total}</span>
+                {/* Card header */}
+                <div style={{ padding: "16px 18px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+                    background: `${color}15`, border: `1.5px solid ${color}30`,
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                  }}>{icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: color, fontFamily: C.sans, fontSize: 11, fontWeight: 800, letterSpacing: "0.07em", textTransform: "uppercase" }}>{label}</div>
+                    <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 10, marginTop: 1 }}>
+                      {allClear ? "90-day window" : `${total} alert${total !== 1 ? "s" : ""}`}
+                    </div>
+                  </div>
+                  {!allClear && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ color: worstColor, fontFamily: C.mono, fontSize: 26, fontWeight: 900, lineHeight: 1 }}>{total}</div>
+                    </div>
                   )}
                 </div>
 
+                {/* Divider */}
+                <div style={{ height: 1, background: allClear ? "#f1f5f9" : `${worstColor}15`, margin: "0 14px" }} />
+
+                {/* Status body */}
                 {allClear ? (
-                  <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ fontSize: 14 }}>✓</span> All clear
+                  <div style={{ padding: "14px 18px 16px", display: "flex", alignItems: "center", gap: 7, color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 700 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#f0fdf4", border: "1.5px solid #bbf7d0", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✓</span>
+                    All clear
                   </div>
                 ) : (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      {exp  > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Expired</span>
-                        <span style={{ background: "#fff1f2", color: "#b91c1c", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fecaca" }}>{exp}</span>
-                      </div>}
-                      {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ color: "#f97316", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Expiring</span>
-                        <span style={{ background: "#fff7ed", color: "#f97316", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fed7aa" }}>{crit}</span>
-                      </div>}
-                      {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ color: "#ca8a04", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Warning</span>
-                        <span style={{ background: "#fefce8", color: "#ca8a04", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fde68a" }}>{warn}</span>
-                      </div>}
-                    </div>
-                    {/* Stacked severity bar */}
-                    <div style={{ height: 5, borderRadius: 4, overflow: "hidden", background: "#f1f5f9", marginTop: 12, display: "flex" }}>
-                      {exp  > 0 && <div style={{ flex: exp,  background: "#b91c1c", transition: "flex 0.4s ease" }} />}
-                      {crit > 0 && <div style={{ flex: crit, background: "#f97316", transition: "flex 0.4s ease" }} />}
-                      {warn > 0 && <div style={{ flex: warn, background: "#ca8a04", transition: "flex 0.4s ease" }} />}
-                    </div>
-                  </>
+                  <div style={{ padding: "12px 12px 14px", display: "flex", gap: 6 }}>
+                    {exp > 0 && (
+                      <div style={{ flex: 1, background: "#fff1f2", border: "1px solid #fecaca", borderRadius: 10, padding: "9px 8px", textAlign: "center" }}>
+                        <div style={{ color: "#b91c1c", fontFamily: C.mono, fontSize: 22, fontWeight: 900, lineHeight: 1 }}>{exp}</div>
+                        <div style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", marginTop: 4, opacity: 0.8 }}>EXPIRED</div>
+                      </div>
+                    )}
+                    {crit > 0 && (
+                      <div style={{ flex: 1, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "9px 8px", textAlign: "center" }}>
+                        <div style={{ color: "#f97316", fontFamily: C.mono, fontSize: 22, fontWeight: 900, lineHeight: 1 }}>{crit}</div>
+                        <div style={{ color: "#f97316", fontFamily: C.sans, fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", marginTop: 4, opacity: 0.8 }}>EXPIRING</div>
+                      </div>
+                    )}
+                    {warn > 0 && (
+                      <div style={{ flex: 1, background: "#fefce8", border: "1px solid #fde68a", borderRadius: 10, padding: "9px 8px", textAlign: "center" }}>
+                        <div style={{ color: "#ca8a04", fontFamily: C.mono, fontSize: 22, fontWeight: 900, lineHeight: 1 }}>{warn}</div>
+                        <div style={{ color: "#ca8a04", fontFamily: C.sans, fontSize: 9, fontWeight: 700, letterSpacing: "0.05em", marginTop: 4, opacity: 0.8 }}>WARNING</div>
+                      </div>
+                    )}
+                  </div>
                 )}
+
+                {/* Footer severity bar */}
+                <div style={{ height: 5, display: "flex", marginTop: "auto" }}>
+                  {allClear
+                    ? <div style={{ flex: 1, background: "linear-gradient(90deg, #16a34a, #22c55e)" }} />
+                    : <>
+                        {exp  > 0 && <div style={{ flex: exp,  background: "#b91c1c" }} />}
+                        {crit > 0 && <div style={{ flex: crit, background: "#f97316" }} />}
+                        {warn > 0 && <div style={{ flex: warn, background: "#ca8a04" }} />}
+                      </>
+                  }
+                </div>
               </div>
             );
           })}
