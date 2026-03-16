@@ -1127,9 +1127,9 @@ const DaysPill = ({ days }) => {
 
 // ── Category Section ──────────────────────────────────────
 const CATEGORY_META = {
-  "PASSPORTS":       { color: "#3b82f6", icon: "🛂" },
-  "WORK PERMIT FEE": { color: "#dc2626", icon: "📋" },
-  "INSURANCE":       { color: "#d97706", icon: "🛡" },
+  "PASSPORTS":       { color: "#2563eb", icon: "🛂" },
+  "WORK PERMIT FEE": { color: "#f97316", icon: "📋" },
+  "INSURANCE":       { color: "#ca8a04", icon: "🛡" },
   "VISA STAMP":      { color: "#a855f7", icon: "🔖" },
   "MEDICAL":         { color: "#0891b2", icon: "🏥" },
 };
@@ -1151,6 +1151,7 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
   const warning  = (alerts || []).filter(a => a.status === "Warning").length;
   const hasUrgent = expired > 0 || critical > 0;
   const meta = CATEGORY_META[title] || { color: C.textMuted, icon: "•" };
+  const worstStatusColor = count === 0 ? "#16a34a" : expired > 0 ? "#b91c1c" : critical > 0 ? "#f97316" : warning > 0 ? "#ca8a04" : "#16a34a";
 
   const byEmployer = {};
   (alerts || []).forEach(a => {
@@ -1163,15 +1164,16 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
   return (
     <div style={{
       background: C.cardBg,
-      border: `1px solid ${hasUrgent && count > 0 ? "#fecaca" : C.border}`,
+      border: `1px solid ${count > 0 ? `${worstStatusColor}35` : C.border}`,
+      borderLeft: `4px solid ${worstStatusColor}`,
       borderRadius: 12, overflow: "hidden",
-      boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+      boxShadow: count > 0 ? `0 2px 12px ${worstStatusColor}12` : "0 1px 4px rgba(0,0,0,0.04)",
     }}>
       {/* Section header */}
       <div onClick={toggle} style={{
         display: "flex", alignItems: "center", gap: 12,
-        padding: "13px 18px",
-        background: hasUrgent && count > 0 ? "#fff8f8" : C.pageBg,
+        padding: "13px 18px 13px 16px",
+        background: count > 0 ? `${worstStatusColor}06` : C.pageBg,
         borderBottom: expanded && count > 0 ? `1px solid ${C.border}` : "none",
         cursor: "pointer", userSelect: "none",
       }}>
@@ -1275,11 +1277,11 @@ const DashboardTab = ({ onNavigate }) => {
   });
 
   const categorySummary = [
-    { key: "Passport",        label: "Passports",       color: "#3b82f6" },
-    { key: "Work Permit Fee", label: "Work Permit Fee", color: "#dc2626" },
-    { key: "Insurance",       label: "Insurance",       color: "#d97706" },
-    { key: "Visa Stamp",      label: "Visa Stamp",      color: "#a855f7" },
-    { key: "Medical",         label: "Medical",         color: "#0891b2" },
+    { key: "Passport",        label: "Passports",       color: "#2563eb", metaKey: "PASSPORTS"       },
+    { key: "Work Permit Fee", label: "Work Permit Fee", color: "#f97316", metaKey: "WORK PERMIT FEE" },
+    { key: "Insurance",       label: "Insurance",       color: "#ca8a04", metaKey: "INSURANCE"       },
+    { key: "Visa Stamp",      label: "Visa Stamp",      color: "#a855f7", metaKey: "VISA STAMP"      },
+    { key: "Medical",         label: "Medical",         color: "#0891b2", metaKey: "MEDICAL"         },
   ];
 
   const totalAlerts = (alertData?.alerts || []).length;
@@ -1298,39 +1300,72 @@ const DashboardTab = ({ onNavigate }) => {
       </div>
 
       {/* Document health grid */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: C.sans, marginBottom: 10 }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: C.sans, marginBottom: 12 }}>
           Document Health — 90-Day Window
         </div>
-        <div className="dg-doc-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-          {categorySummary.map(({ key, label, color }) => {
+        <div className="dg-doc-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          {categorySummary.map(({ key, label, color, metaKey }) => {
             const items = byType[key] || [];
-            const exp  = items.filter(a => a.status === "Expired").length;
-            const crit = items.filter(a => a.status === "Critical").length;
-            const warn = items.filter(a => a.status === "Warning").length;
-            const allClear = exp === 0 && crit === 0 && warn === 0;
+            const exp   = items.filter(a => a.status === "Expired").length;
+            const crit  = items.filter(a => a.status === "Critical").length;
+            const warn  = items.filter(a => a.status === "Warning").length;
+            const total = exp + crit + warn;
+            const allClear = total === 0;
+            const worstColor = exp > 0 ? "#b91c1c" : crit > 0 ? "#f97316" : warn > 0 ? "#ca8a04" : "#16a34a";
+            const icon = CATEGORY_META[metaKey]?.icon || "•";
             return (
-              <div key={key} style={{
-                background: C.cardBg,
-                border: `1px solid ${exp > 0 || crit > 0 ? `${color}30` : C.border}`,
-                borderTop: `3px solid ${allClear ? "#16a34a" : color}`,
-                borderRadius: 10, padding: "14px 16px",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 18 }}>{CATEGORY_META[key === "Passport" ? "PASSPORTS" : key === "Work Permit Fee" ? "WORK PERMIT FEE" : key === "Visa Stamp" ? "VISA STAMP" : key.toUpperCase()]?.icon || "•"}</span>
-                  <span style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 700 }}>{label}</span>
+              <div key={key} className="dg-stat-card-gradient" style={{
+                background: `linear-gradient(135deg, #ffffff 0%, ${worstColor}12 55%, #ffffff 100%)`,
+                border: `1px solid ${worstColor}30`,
+                borderRadius: 14, padding: "18px 18px 14px",
+                boxShadow: `0 4px 16px ${worstColor}10`,
+                position: "relative", overflow: "hidden",
+                transition: "transform 0.15s, box-shadow 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px ${worstColor}22`; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 4px 16px ${worstColor}10`; }}>
+                {/* Top bar in doc-type color */}
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)`, borderRadius: "14px 14px 0 0" }} />
+                {/* Watermark icon */}
+                <div style={{ position: "absolute", right: 10, bottom: 8, fontSize: 44, opacity: 0.06, userSelect: "none", lineHeight: 1 }}>{icon}</div>
+
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
+                  <span style={{ fontSize: 17, lineHeight: 1 }}>{icon}</span>
+                  <span style={{ color: color, fontFamily: C.sans, fontSize: 12, fontWeight: 800, letterSpacing: "0.02em" }}>{label.toUpperCase()}</span>
+                  {total > 0 && (
+                    <span style={{ marginLeft: "auto", background: `${worstColor}18`, color: worstColor, fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, border: `1px solid ${worstColor}30` }}>{total}</span>
+                  )}
                 </div>
+
                 {allClear ? (
-                  <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 16 }}>✓</span> All documents valid
+                  <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ fontSize: 14 }}>✓</span> All clear
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {exp > 0  && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12 }}>Expired</span><span style={{ background: "#fff1f2", color: "#b91c1c", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{exp}</span></div>}
-                    {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#f97316", fontFamily: C.sans, fontSize: 12 }}>Expiring</span><span style={{ background: "#fff7ed", color: "#f97316", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{crit}</span></div>}
-                    {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#ca8a04", fontFamily: C.sans, fontSize: 12 }}>Warning</span><span style={{ background: "#fefce8", color: "#ca8a04", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{warn}</span></div>}
-                  </div>
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      {exp  > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Expired</span>
+                        <span style={{ background: "#fff1f2", color: "#b91c1c", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fecaca" }}>{exp}</span>
+                      </div>}
+                      {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ color: "#f97316", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Expiring</span>
+                        <span style={{ background: "#fff7ed", color: "#f97316", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fed7aa" }}>{crit}</span>
+                      </div>}
+                      {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ color: "#ca8a04", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>Warning</span>
+                        <span style={{ background: "#fefce8", color: "#ca8a04", fontFamily: C.mono, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 20, border: "1px solid #fde68a" }}>{warn}</span>
+                      </div>}
+                    </div>
+                    {/* Stacked severity bar */}
+                    <div style={{ height: 5, borderRadius: 4, overflow: "hidden", background: "#f1f5f9", marginTop: 12, display: "flex" }}>
+                      {exp  > 0 && <div style={{ flex: exp,  background: "#b91c1c", transition: "flex 0.4s ease" }} />}
+                      {crit > 0 && <div style={{ flex: crit, background: "#f97316", transition: "flex 0.4s ease" }} />}
+                      {warn > 0 && <div style={{ flex: warn, background: "#ca8a04", transition: "flex 0.4s ease" }} />}
+                    </div>
+                  </>
                 )}
               </div>
             );
