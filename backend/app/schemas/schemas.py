@@ -75,6 +75,29 @@ class SiteRead(SiteBase):
     quota_utilisation_pct: float
 
 
+# ── Quota Slot ────────────────────────────────────────────
+class QuotaSlotCreate(BaseModel):
+    site_id: int
+    slot_number: str
+    expiry_date: Optional[date] = None
+
+
+class QuotaSlotUpdate(BaseModel):
+    slot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+
+
+class QuotaSlotRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    site_id: int
+    slot_number: str
+    expiry_date: Optional[date] = None
+    assigned_employee_id: Optional[int] = None
+    assigned_employee_name: Optional[str] = None
+    is_expired: bool = False
+
+
 # ── Employee ──────────────────────────────────────────────
 class EmployeeBase(BaseModel):
     full_name: str
@@ -96,6 +119,7 @@ class EmployeeCreate(EmployeeBase):
     employer_id: int
     site_id: int
     employee_number: Optional[str] = None  # auto-generated if not provided
+    quota_slot_id: Optional[int] = None
 
 
 class BulkUpdateRow(BaseModel):
@@ -135,6 +159,7 @@ class EmployeeUpdate(BaseModel):
     work_permit_fee_expiry: Optional[date] = None
     medical_expiry: Optional[date] = None
     resigned: Optional[bool] = None
+    quota_slot_id: Optional[int] = None
     note: Optional[str] = None  # optional note for audit log
 
 
@@ -149,6 +174,10 @@ class EmployeeRead(EmployeeBase):
     id: int
     employer_id: int
     site_id: int
+    quota_slot_id: Optional[int] = None
+    quota_slot_number: Optional[str] = None
+    quota_slot_expiry: Optional[date] = None
+    quota_slot_expired: bool = False
     passport_status: Optional[ExpiryDetail] = None
     visa_stamp_status: Optional[ExpiryDetail] = None
     insurance_status: Optional[ExpiryDetail] = None

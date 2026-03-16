@@ -9,8 +9,8 @@ import random
 import os
 
 from app.database import init_db, engine, AsyncSessionLocal
-from app.models.models import Employer, Site, Employee, AuditLog, User
-from app.routers import employees, employers, sites, alerts, dashboard, admin
+from app.models.models import Employer, Site, Employee, AuditLog, User, QuotaSlot
+from app.routers import employees, employers, sites, alerts, dashboard, admin, quota_slots
 from app.routers import auth as auth_router
 from app.auth import hash_password
 from sqlalchemy import select, func, text
@@ -128,6 +128,28 @@ async def run_migrations():
             await conn.execute(text(
                 "ALTER TABLE employees ADD COLUMN IF NOT EXISTS work_permit_number VARCHAR(100)"
             ))
+            # Create quota_slots table if missing
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS quota_slots (
+                    id SERIAL PRIMARY KEY,
+                    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+                    slot_number VARCHAR(100) UNIQUE NOT NULL,
+                    expiry_date DATE
+                )
+            """))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_quota_slots_site_id ON quota_slots (site_id)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_quota_slots_slot_number ON quota_slots (slot_number)"
+            ))
+            # Add quota_slot_id to employees if missing
+            await conn.execute(text(
+                "ALTER TABLE employees ADD COLUMN IF NOT EXISTS quota_slot_id INTEGER REFERENCES quota_slots(id) ON DELETE SET NULL"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_employees_quota_slot_id ON employees (quota_slot_id)"
+            ))
             # Ensure the admin user has is_admin = true
             await conn.execute(text(
                 "UPDATE users SET is_admin = TRUE WHERE username = 'admin'"
@@ -219,6 +241,7 @@ app.include_router(employees.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(quota_slots.router)
 
 
 @app.get("/health")

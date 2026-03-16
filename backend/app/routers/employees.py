@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
+from sqlalchemy.orm import selectinload
 from datetime import date, timedelta
 from typing import List, Optional
 import csv
 import io
 
 from app.database import get_db
-from app.models.models import Employee, Site, Employer, AuditLog, User
+from app.models.models import Employee, Site, Employer, AuditLog, User, QuotaSlot
 from app.schemas.schemas import (
     EmployeeCreate, EmployeeRead, EmployeeUpdate,
     AlertsResponse, ExpiryAlert, ExpiryStatus, AuditLogRead,
@@ -29,6 +30,12 @@ def _enrich(emp: Employee) -> EmployeeRead:
     data.insurance_status       = calculate_expiry_status(emp.insurance_expiry,       *FIELD_THRESHOLDS["insurance_expiry"])
     data.work_permit_fee_status = calculate_expiry_status(emp.work_permit_fee_expiry, *FIELD_THRESHOLDS["work_permit_fee_expiry"])
     data.medical_status         = calculate_expiry_status(emp.medical_expiry,         *FIELD_THRESHOLDS["medical_expiry"])
+    if emp.quota_slot:
+        data.quota_slot_number = emp.quota_slot.slot_number
+        data.quota_slot_expiry = emp.quota_slot.expiry_date
+        data.quota_slot_expired = (
+            emp.quota_slot.expiry_date is not None and emp.quota_slot.expiry_date < date.today()
+        )
     return data
 
 
@@ -79,7 +86,8 @@ async def create_employee(payload: EmployeeCreate, db: AsyncSession = Depends(ge
     emp = Employee(**data)
     db.add(emp)
     await db.commit()
-    await db.refresh(emp)
+    result2 = await db.execute(select(Employee).options(selectinload(Employee.quota_slot)).where(Employee.id == emp.id))
+    emp = result2.scalar_one()
     return _enrich(emp)
 
 
@@ -92,7 +100,7 @@ async def list_employees(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = select(Employee)
+    q = select(Employee).options(selectinload(Employee.quota_slot))
     if site_id:
         q = q.where(Employee.site_id == site_id)
     if employer_id:
@@ -104,7 +112,7 @@ async def list_employees(
 
 @router.get("/{employee_id}", response_model=EmployeeRead)
 async def get_employee(employee_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    result = await db.execute(select(Employee).where(Employee.id == employee_id))
+    result = await db.execute(select(Employee).options(selectinload(Employee.quota_slot)).where(Employee.id == employee_id))
     emp = result.scalar_one_or_none()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -125,7 +133,7 @@ async def get_employee_logs(employee_id: int, db: AsyncSession = Depends(get_db)
 async def update_employee(
     employee_id: int, payload: EmployeeUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    result = await db.execute(select(Employee).where(Employee.id == employee_id))
+    result = await db.execute(select(Employee).options(selectinload(Employee.quota_slot)).where(Employee.id == employee_id))
     emp = result.scalar_one_or_none()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -145,6 +153,7 @@ async def update_employee(
         "work_permit_fee_expiry": "Work Permit Fee Expiry",
         "medical_expiry": "Medical Expiry",
         "resigned": "Resigned",
+        "quota_slot_id": "Quota Slot",
     }
 
     # Treat empty string passport_number as None
@@ -158,6 +167,25 @@ async def update_employee(
         )).scalar_one_or_none()
         if dup:
             raise HTTPException(status_code=409, detail=f"Passport number '{changes['passport_number']}' already exists (Employee: {dup.full_name})")
+
+    # Block work_permit_fee_expiry update if quota slot is expired
+    if "work_permit_fee_expiry" in changes and changes["work_permit_fee_expiry"] is not None:
+        if emp.quota_slot_id:
+            slot_result = await db.execute(select(QuotaSlot).where(QuotaSlot.id == emp.quota_slot_id))
+            slot = slot_result.scalar_one_or_none()
+            if slot and slot.expiry_date and slot.expiry_date < date.today():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "error": "Quota Slot Expired",
+                        "message": (
+                            f"Quota slot '{slot.slot_number}' expired on {slot.expiry_date}. "
+                            f"Work Permit Fee cannot be renewed until the quota slot expiry is updated."
+                        ),
+                        "slot_number": slot.slot_number,
+                        "slot_expiry": str(slot.expiry_date),
+                    },
+                )
 
     # Collect audit entries before updating
     audit_entries = []
@@ -190,7 +218,9 @@ async def update_employee(
         except Exception:
             await db.rollback()
 
-    return _enrich(emp)
+    # Reload with quota_slot relationship
+    fresh = (await db.execute(select(Employee).options(selectinload(Employee.quota_slot)).where(Employee.id == emp.id))).scalar_one()
+    return _enrich(fresh)
 
 
 @router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)

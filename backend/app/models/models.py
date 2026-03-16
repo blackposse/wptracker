@@ -40,10 +40,23 @@ class Site(Base):
 
     employer = relationship("Employer", back_populates="sites")
     employees = relationship("Employee", back_populates="site")
+    quota_slots = relationship("QuotaSlot", back_populates="site", cascade="all, delete-orphan")
 
     @hybrid_property
     def used_slots(self):
         return len(self.employees)
+
+
+class QuotaSlot(Base):
+    __tablename__ = "quota_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    slot_number = Column(String(100), unique=True, nullable=False, index=True)
+    expiry_date = Column(Date, nullable=True)
+
+    site = relationship("Site", back_populates="quota_slots")
+    employees = relationship("Employee", back_populates="quota_slot")
 
 
 class Employee(Base):
@@ -75,8 +88,11 @@ class Employee(Base):
         Index("ix_medical_expiry", "medical_expiry"),
     )
 
+    quota_slot_id = Column(Integer, ForeignKey("quota_slots.id", ondelete="SET NULL"), nullable=True, index=True)
+
     employer = relationship("Employer", back_populates="employees")
     site = relationship("Site", back_populates="employees")
+    quota_slot = relationship("QuotaSlot", back_populates="employees")
     audit_logs = relationship("AuditLog", back_populates="employee", cascade="all, delete-orphan")
 
 

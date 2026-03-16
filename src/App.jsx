@@ -294,6 +294,7 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
     insurance_expiry:       emp.insurance_expiry || "",
     work_permit_fee_expiry: emp.work_permit_fee_expiry || "",
     medical_expiry:         emp.medical_expiry || "",
+    quota_slot_id:          emp.quota_slot_id || "",
     note:                   "",
   });
   const [error, setError] = useState(null);
@@ -305,6 +306,16 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
   const [renewForm, setRenewForm] = useState({ passport_number: emp.passport_number || "", passport_expiry: emp.passport_expiry || "", note: "Passport Renewal" });
   const [renewSaving, setRenewSaving] = useState(false);
   const [renewError, setRenewError] = useState(null);
+  const [siteSlots, setSiteSlots] = useState(null);
+
+  useEffect(() => {
+    if (mode === "EDIT" && siteSlots === null) {
+      apiFetch(`${API}/quota-slots/?site_id=${emp.site_id}`)
+        .then(r => r.json())
+        .then(d => setSiteSlots(Array.isArray(d) ? d : []))
+        .catch(() => setSiteSlots([]));
+    }
+  }, [mode]);
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -331,6 +342,8 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
       if (payload[f] === "") payload[f] = null;
     });
     if (payload.passport_number === "") payload.passport_number = null;
+    if (payload.quota_slot_id === "" || payload.quota_slot_id === null) payload.quota_slot_id = null;
+    else payload.quota_slot_id = parseInt(payload.quota_slot_id);
     if (!payload.note) delete payload.note;
     const doFetch = () => apiFetch(`${API}/employees/${emp.id}`, {
       method: "PATCH",
@@ -449,6 +462,7 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
               ["Site",           siteName],
               ["Nationality",    emp.nationality || "—"],
               ["Job Title",      emp.job_title || "—"],
+              ["Quota Slot",     emp.quota_slot_number || "—"],
             ].map(([lbl, val]) => (
               <div key={lbl} style={{ marginBottom: 14 }}>
                 <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 3 }}>{lbl}</div>
@@ -457,6 +471,15 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
             ))}
           </div>
 
+          {emp.quota_slot_expired && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>⚠</span>
+              <div>
+                <strong>Quota Slot Expired</strong> — Slot <span style={{ fontFamily: C.mono }}>{emp.quota_slot_number}</span> expired on {emp.quota_slot_expiry}.
+                Work Permit Fee cannot be renewed until the slot expiry is updated.
+              </div>
+            </div>
+          )}
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18, marginBottom: 20 }}>
             <div style={{ color: C.textSub, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 14 }}>Document Status</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -587,6 +610,29 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
             <ExtendField label="Medical Expiry"     name="medical_expiry"     value={form.medical_expiry}     onChange={handleChange} unit="years" />
           </div>
 
+          {siteSlots !== null && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Quota Slot</label>
+              <select name="quota_slot_id" value={form.quota_slot_id || ""} onChange={handleChange}
+                style={{ ...inputStyle(false), appearance: "none", cursor: "pointer" }}>
+                <option value="">— None —</option>
+                {siteSlots.map(s => {
+                  const taken = s.assigned_employee_id && s.assigned_employee_id !== emp.id;
+                  return (
+                    <option key={s.id} value={s.id} disabled={taken}>
+                      {s.slot_number}{s.expiry_date ? ` (exp: ${s.expiry_date})` : ""}{s.is_expired ? " ⚠ EXPIRED" : ""}{taken ? " — assigned" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              {form.quota_slot_id && siteSlots.find(s => s.id === parseInt(form.quota_slot_id))?.is_expired && (
+                <div style={{ color: "#dc2626", fontSize: 11, fontFamily: C.sans, marginTop: 4 }}>
+                  ⚠ This slot is expired. Work Permit Fee updates will be blocked until the slot is renewed.
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Note <span style={{ color: C.textMuted, textTransform: "none", fontWeight: 400 }}>(optional — saved to audit log)</span></label>
             <input type="text" name="note" value={form.note} onChange={handleChange}
@@ -666,12 +712,172 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
   );
 };
 
+// ── Quota Slots Panel ─────────────────────────────────────
+const QuotaSlotsPanel = ({ site, onClose }) => {
+  const [slots, setSlots] = useState(null);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addData, setAddData] = useState({ slot_number: "", expiry_date: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [editExpiry, setEditExpiry] = useState("");
+
+  const fetchSlots = () => {
+    apiFetch(`${API}/quota-slots/?site_id=${site.id}`)
+      .then(r => r.json())
+      .then(d => setSlots(Array.isArray(d) ? d : []))
+      .catch(() => setSlots([]));
+  };
+
+  useEffect(() => { fetchSlots(); }, []);
+
+  const handleAdd = async () => {
+    if (!addData.slot_number.trim()) { setError("Slot number is required"); return; }
+    setError(null); setSaving(true);
+    try {
+      const res = await apiFetch(`${API}/quota-slots/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ site_id: site.id, slot_number: addData.slot_number.trim(), expiry_date: addData.expiry_date || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail?.message || data.detail || "Error creating slot"); }
+      else { setAddData({ slot_number: "", expiry_date: "" }); setShowAdd(false); fetchSlots(); }
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleUpdateExpiry = async (slotId) => {
+    setError(null); setSaving(true);
+    try {
+      const res = await apiFetch(`${API}/quota-slots/${slotId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiry_date: editExpiry || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail?.message || data.detail || "Error updating slot"); }
+      else { setEditingId(null); fetchSlots(); }
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (slotId) => {
+    setError(null);
+    const res = await apiFetch(`${API}/quota-slots/${slotId}`, { method: "DELETE" });
+    if (res.ok) { fetchSlots(); }
+    else { const d = await res.json().catch(() => ({})); setError(d.detail || "Error deleting slot"); }
+  };
+
+  return (
+    <Modal wide title={`Quota Slots — ${site.site_name}`} onClose={onClose}>
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 14 }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Add slot form */}
+      {showAdd ? (
+        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+          <div style={{ color: "#15803d", fontFamily: C.sans, fontSize: 13, fontWeight: 700, marginBottom: 12 }}>New Quota Slot</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ ...labelStyle, color: "#15803d" }}>Slot Number *</label>
+              <input value={addData.slot_number} onChange={e => setAddData(d => ({ ...d, slot_number: e.target.value }))}
+                placeholder="e.g. QS00301620"
+                style={{ ...inputStyle(false), borderColor: "#bbf7d0", background: "#fff" }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ ...labelStyle, color: "#15803d" }}>Expiry Date</label>
+              <input type="date" value={addData.expiry_date} onChange={e => setAddData(d => ({ ...d, expiry_date: e.target.value }))}
+                style={{ ...inputStyle(false), borderColor: "#bbf7d0", background: "#fff" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => { setShowAdd(false); setError(null); }} style={{ background: "#fff", color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+            <button onClick={handleAdd} disabled={saving} style={{ background: "#16a34a", color: "#fff", border: "none", padding: "7px 20px", borderRadius: 8, cursor: saving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              {saving ? "Saving..." : "Add Slot"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => { setShowAdd(true); setError(null); }} style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+          + Add Quota Slot
+        </button>
+      )}
+
+      {/* Slots list */}
+      {slots === null ? (
+        <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: "24px 0", textAlign: "center" }}>Loading...</div>
+      ) : slots.length === 0 ? (
+        <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: "24px 0", textAlign: "center" }}>No quota slots defined yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {slots.map(slot => {
+            const expired = slot.is_expired;
+            const borderColor = expired ? "#fca5a5" : slot.expiry_date ? "#d1d5db" : C.border;
+            const topColor = expired ? "#dc2626" : slot.expiry_date ? "#16a34a" : C.border;
+            return (
+              <div key={slot.id} style={{ background: C.bg, border: `1px solid ${borderColor}`, borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${topColor}` }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: C.mono, fontSize: 14, fontWeight: 700, color: C.text }}>{slot.slot_number}</span>
+                      {expired && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 8px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>EXPIRED</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                      <span style={{ color: expired ? "#dc2626" : C.textSub, fontFamily: C.mono, fontSize: 12 }}>
+                        Expiry: {slot.expiry_date || "—"}
+                      </span>
+                      <span style={{ color: slot.assigned_employee_name ? C.accent : C.textMuted, fontFamily: C.sans, fontSize: 12 }}>
+                        {slot.assigned_employee_name ? `Assigned: ${slot.assigned_employee_name}` : "Unassigned"}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={() => { setEditingId(slot.id); setEditExpiry(slot.expiry_date || ""); setError(null); }}
+                      style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "4px 12px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>
+                      Update Expiry
+                    </button>
+                    {!slot.assigned_employee_id && (
+                      <button
+                        onClick={() => handleDelete(slot.id)}
+                        style={{ background: "none", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {editingId === slot.id && (
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)}
+                      style={{ ...inputStyle(false), width: "auto", flex: "0 0 160px" }} />
+                    <button onClick={() => handleUpdateExpiry(slot.id)} disabled={saving}
+                      style={{ background: C.accent, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 7, cursor: saving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+                      {saving ? "Saving..." : "Save"}
+                    </button>
+                    <button onClick={() => setEditingId(null)} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
 // ── Site Card ─────────────────────────────────────────────
-const SiteCard = ({ site, onViewEmployees }) => {
+const SiteCard = ({ site, onViewEmployees, onSlotsChanged }) => {
+  const [showSlots, setShowSlots] = useState(false);
   const pct = site.quota_utilisation_pct;
   const atCapacity = site.available_slots === 0;
   const barColor = pct >= 100 ? "#dc2626" : pct >= 80 ? "#d97706" : "#16a34a";
   return (
+    <>
     <div style={{
       background: C.bg, border: `1px solid ${atCapacity ? "#fca5a5" : C.border}`,
       borderRadius: 10, padding: "14px 18px",
@@ -680,6 +886,17 @@ const SiteCard = ({ site, onViewEmployees }) => {
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
         <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, flex: 1 }}>{site.site_name}</div>
         {atCapacity && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>QUOTA FULL</span>}
+        <button
+          onClick={() => setShowSlots(true)}
+          style={{
+            background: "#f0fdf4", color: "#16a34a",
+            border: "1px solid #bbf7d0",
+            padding: "3px 12px", borderRadius: 20, cursor: "pointer",
+            fontFamily: C.sans, fontSize: 11, fontWeight: 600,
+          }}
+          title="Manage quota slots">
+          Quota Slots
+        </button>
         <button
           onClick={() => onViewEmployees && onViewEmployees(site)}
           style={{
@@ -697,6 +914,8 @@ const SiteCard = ({ site, onViewEmployees }) => {
       </div>
       <div style={{ color: C.textMuted, fontSize: 11, fontFamily: C.sans }}>{pct}% utilisation · {site.available_slots} slots available</div>
     </div>
+    {showSlots && <QuotaSlotsPanel site={site} onClose={() => { setShowSlots(false); onSlotsChanged && onSlotsChanged(); }} />}
+    </>
   );
 };
 
@@ -1255,13 +1474,25 @@ const EmployeesTab = () => {
   const [success, setSuccess] = useState(null);
   const [search, setSearch] = useState("");
   const [showResigned, setShowResigned] = useState(false);
+  const [formQuotaSlots, setFormQuotaSlots] = useState([]);
 
   useEffect(() => { if (employees) setLocalEmployees(employees); }, [employees]);
 
   const handleFormChange = e => {
     const { name, value } = e.target;
     if (name === "employer_id") {
-      setForm(f => ({ ...f, employer_id: value, site_id: "" }));
+      setForm(f => ({ ...f, employer_id: value, site_id: "", quota_slot_id: "" }));
+      setFormQuotaSlots([]);
+    } else if (name === "site_id") {
+      setForm(f => ({ ...f, site_id: value, quota_slot_id: "" }));
+      if (value) {
+        apiFetch(`${API}/quota-slots/?site_id=${value}`)
+          .then(r => r.json())
+          .then(d => setFormQuotaSlots(Array.isArray(d) ? d : []))
+          .catch(() => setFormQuotaSlots([]));
+      } else {
+        setFormQuotaSlots([]);
+      }
     } else {
       setForm(f => ({ ...f, [name]: value }));
     }
@@ -1270,10 +1501,13 @@ const EmployeesTab = () => {
   const handleAdd = async () => {
     setError(null);
     try {
+      const body = { ...form, employer_id: parseInt(form.employer_id), site_id: parseInt(form.site_id) };
+      if (body.quota_slot_id) body.quota_slot_id = parseInt(body.quota_slot_id);
+      else delete body.quota_slot_id;
       const res = await apiFetch(`${API}/employees/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, employer_id: parseInt(form.employer_id), site_id: parseInt(form.site_id) }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1437,6 +1671,20 @@ const EmployeesTab = () => {
             <InputRow label="Work Permit No." name="work_permit_number" value={form.work_permit_number || ""} onChange={handleFormChange} placeholder="e.g. WP-2024-00123" />
             <SelectRow label="Employer" name="employer_id" value={form.employer_id || ""} onChange={handleFormChange} options={employerOptions} required />
             <SelectRow label="Site"     name="site_id"     value={form.site_id || ""}     onChange={handleFormChange} options={filteredSiteOptions} required />
+            {form.site_id && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Quota Slot <span style={{ color: C.textMuted, textTransform: "none", fontWeight: 400 }}>(optional)</span></label>
+                <select name="quota_slot_id" value={form.quota_slot_id || ""} onChange={handleFormChange}
+                  style={{ ...inputStyle(false), appearance: "none", cursor: "pointer" }}>
+                  <option value="">— None —</option>
+                  {formQuotaSlots.map(s => (
+                    <option key={s.id} value={s.id} disabled={!!s.assigned_employee_id}>
+                      {s.slot_number}{s.expiry_date ? ` (exp: ${s.expiry_date})` : ""}{s.is_expired ? " ⚠ EXPIRED" : ""}{s.assigned_employee_id ? " — assigned" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Nationality</label>
               <select name="nationality" value={form.nationality || ""} onChange={handleFormChange}
