@@ -136,6 +136,7 @@ async def update_employee(
     FIELD_LABELS = {
         "full_name": "Full Name",
         "passport_number": "Passport Number",
+        "work_permit_number": "Work Permit Number",
         "nationality": "Nationality",
         "job_title": "Job Title",
         "passport_expiry": "Passport Expiry",
@@ -203,11 +204,12 @@ async def delete_employee(employee_id: int, db: AsyncSession = Depends(get_db), 
 
 
 DATE_FIELDS = {"passport_expiry", "visa_stamp_expiry", "insurance_expiry", "work_permit_fee_expiry", "medical_expiry"}
-UPDATABLE_FIELDS = {"full_name", "passport_number", "nationality", "job_title"} | DATE_FIELDS
+UPDATABLE_FIELDS = {"full_name", "passport_number", "work_permit_number", "nationality", "job_title"} | DATE_FIELDS
 
 FIELD_LABELS = {
     "full_name": "Full Name",
     "passport_number": "Passport Number",
+    "work_permit_number": "Work Permit Number",
     "nationality": "Nationality",
     "job_title": "Job Title",
     "passport_expiry": "Passport Expiry",
@@ -373,6 +375,7 @@ async def bulk_create_employees(
             full_name=full_name,
             employee_number=emp_number,
             passport_number=passport_number,
+            work_permit_number=(row.get("work_permit_number") or "").strip() or None,
             nationality=(row.get("nationality") or "").strip() or None,
             job_title=(row.get("job_title") or "").strip() or None,
             passport_expiry=parse_date(row.get("passport_expiry")),

@@ -286,6 +286,7 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
   const [form, setForm] = useState({
     full_name:              emp.full_name || "",
     passport_number:        emp.passport_number || "",
+    work_permit_number:     emp.work_permit_number || "",
     nationality:            emp.nationality || "",
     job_title:              emp.job_title || "",
     passport_expiry:        emp.passport_expiry || "",
@@ -443,6 +444,7 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
             {[
               ["Emp No.",        emp.employee_number],
               ["Passport No.",   emp.passport_number || "—"],
+              ["WP No.",         emp.work_permit_number || "—"],
               ["Employer",       employerName],
               ["Site",           siteName],
               ["Nationality",    emp.nationality || "—"],
@@ -568,6 +570,8 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
             <InputRow label="Full Name" name="full_name" value={form.full_name} onChange={handleChange} required />
             <InputRow label="Passport No." name="passport_number" value={form.passport_number} onChange={handleChange} placeholder="e.g. A12345678" />
+            <InputRow label="Work Permit No." name="work_permit_number" value={form.work_permit_number} onChange={handleChange} placeholder="e.g. WP-2024-00123" />
+            <InputRow label="Job Title" name="job_title" value={form.job_title} onChange={handleChange} />
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Nationality</label>
               <select name="nationality" value={form.nationality} onChange={handleChange}
@@ -576,7 +580,6 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
                 {NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
-            <InputRow label="Job Title" name="job_title" value={form.job_title} onChange={handleChange} />
             <InputRow label="Passport Expiry" name="passport_expiry" type="date" value={form.passport_expiry} onChange={handleChange} />
             <ExtendField label="Visa Stamp Expiry"  name="visa_stamp_expiry"  value={form.visa_stamp_expiry}  onChange={handleChange} unit="years" />
             <ExtendField label="Insurance Expiry"   name="insurance_expiry"   value={form.insurance_expiry}   onChange={handleChange} unit="years" />
@@ -1310,6 +1313,7 @@ const EmployeesTab = () => {
       emp.full_name?.toLowerCase().includes(lowerSearch) ||
       emp.employee_number?.toLowerCase().includes(lowerSearch) ||
       emp.passport_number?.toLowerCase().includes(lowerSearch) ||
+      emp.work_permit_number?.toLowerCase().includes(lowerSearch) ||
       empName.toLowerCase().includes(lowerSearch) ||
       siteName.toLowerCase().includes(lowerSearch) ||
       emp.nationality?.toLowerCase().includes(lowerSearch)
@@ -1322,7 +1326,7 @@ const EmployeesTab = () => {
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18, gap: 12, alignItems: "center" }}>
         <input
           type="text"
-          placeholder="Search by name, emp no., passport no., employer, site..."
+          placeholder="Search by name, emp no., passport no., work permit no., employer, site..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{
@@ -1366,7 +1370,7 @@ const EmployeesTab = () => {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
-                {["Emp No.", "Name", "Passport No.", "Employer", "Site", "Nationality", "Passport", "Visa", "Insurance", "Work Permit", "Medical"].map(h => (
+                {["Emp No.", "Name", "Passport No.", "WP No.", "Employer", "Site", "Nationality", "Passport", "Visa", "Insurance", "Work Permit", "Medical"].map(h => (
                   <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 12px", textAlign: "left", textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
@@ -1384,6 +1388,7 @@ const EmployeesTab = () => {
                     {emp.resigned && <span style={{ marginLeft: 8, background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, fontFamily: C.sans }}>RESIGNED</span>}
                   </td>
                   <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.passport_number || <span style={{ color: C.textMuted }}>—</span>}</td>
+                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.work_permit_number || <span style={{ color: C.textMuted }}>—</span>}</td>
                   <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>
                     {(employers || []).find(e => e.id === emp.employer_id)?.name || emp.employer_id}
                   </td>
@@ -1429,6 +1434,7 @@ const EmployeesTab = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
             <InputRow label="Full Name" name="full_name" value={form.full_name || ""} onChange={handleFormChange} required />
             <InputRow label="Passport No." name="passport_number" value={form.passport_number || ""} onChange={handleFormChange} placeholder="e.g. A12345678" />
+            <InputRow label="Work Permit No." name="work_permit_number" value={form.work_permit_number || ""} onChange={handleFormChange} placeholder="e.g. WP-2024-00123" />
             <SelectRow label="Employer" name="employer_id" value={form.employer_id || ""} onChange={handleFormChange} options={employerOptions} required />
             <SelectRow label="Site"     name="site_id"     value={form.site_id || ""}     onChange={handleFormChange} options={filteredSiteOptions} required />
             <div style={{ marginBottom: 16 }}>
@@ -1785,14 +1791,14 @@ const EmployersTab = () => {
 
 // ── CSV Import Modal ──────────────────────────────────────
 const CSV_UPDATE_TEMPLATE = [
-  "employee_number,full_name,passport_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "EMP-100,John Smith,A12345678,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
+  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
+  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
-  "full_name,employer_name,site_name,passport_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
-  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,Filipino,Technician,2028-03-15,2028-03-15,2027-06-01,2027-09-01,2027-03-15",
+  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
+  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
+  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2028-03-15,2028-03-15,2027-06-01,2027-09-01,2027-03-15",
 ].join("\n");
 
 const CsvImportModal = ({ onClose, onDone }) => {
@@ -1833,6 +1839,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "employer_name",          note: "REQUIRED — exact employer name as in the system", required: true },
     { col: "site_name",              note: "REQUIRED — exact site name under that employer", required: true },
     { col: "passport_number",        note: "Passport document number — checked for duplicates" },
+    { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123)" },
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
     { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
     { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
@@ -1845,6 +1852,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
   const UPDATE_FIELDS = [
     { col: "employee_number",        note: "REQUIRED — existing system ID (e.g. EMP-100). Used to find the employee.", required: true },
     { col: "passport_number",        note: "Passport document number — checked for duplicates" },
+    { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123)" },
     { col: "full_name",              note: "Employee's full name" },
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
     { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },

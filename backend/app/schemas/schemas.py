@@ -80,6 +80,7 @@ class EmployeeBase(BaseModel):
     full_name: str
     employee_number: str
     passport_number: Optional[str] = None
+    work_permit_number: Optional[str] = None
     nationality: Optional[str] = None
 
     job_title: Optional[str] = None
@@ -125,6 +126,7 @@ class BulkCreateResult(BaseModel):
 class EmployeeUpdate(BaseModel):
     full_name: Optional[str] = None
     passport_number: Optional[str] = None
+    work_permit_number: Optional[str] = None
     nationality: Optional[str] = None
     job_title: Optional[str] = None
     passport_expiry: Optional[date] = None

@@ -124,6 +124,10 @@ async def run_migrations():
             await conn.execute(text(
                 "ALTER TABLE employers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"
             ))
+            # Add work_permit_number to employees if missing
+            await conn.execute(text(
+                "ALTER TABLE employees ADD COLUMN IF NOT EXISTS work_permit_number VARCHAR(100)"
+            ))
             # Ensure the admin user has is_admin = true
             await conn.execute(text(
                 "UPDATE users SET is_admin = TRUE WHERE username = 'admin'"

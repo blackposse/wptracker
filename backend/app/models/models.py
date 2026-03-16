@@ -55,7 +55,8 @@ class Employee(Base):
 
     full_name = Column(String(255), nullable=False)
     employee_number = Column(String(100), unique=True, nullable=False, index=True)
-    passport_number = Column(String(100), unique=True, nullable=True, index=True)
+    passport_number     = Column(String(100), unique=True, nullable=True, index=True)
+    work_permit_number  = Column(String(100), nullable=True, index=True)
     nationality = Column(String(100))
     job_title = Column(String(255))
 
