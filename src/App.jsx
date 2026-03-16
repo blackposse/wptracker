@@ -2103,9 +2103,9 @@ const EmployersTab = () => {
 
 // ── CSV Import Modal ──────────────────────────────────────
 const CSV_UPDATE_TEMPLATE = [
-  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15",
-  "EMP-101,,,,,,,,2026-07-20,2026-10-01,2026-04-20",
+  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_expiry",
+  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15,2026-09-30",
+  "EMP-101,,,,,,,,2026-07-20,2026-10-01,2026-04-20,",
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
@@ -2174,6 +2174,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "insurance_expiry",       note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "work_permit_fee_expiry", note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "medical_expiry",         note: "YYYY-MM-DD — leave blank to keep current date" },
+    { col: "quota_slot_expiry",      note: "YYYY-MM-DD — updates the expiry of the employee's assigned quota slot; leave blank to skip" },
   ];
 
   const fields = mode === "create" ? CREATE_FIELDS : UPDATE_FIELDS;

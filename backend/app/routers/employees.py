@@ -297,6 +297,22 @@ async def bulk_update_employees(
             except ValueError:
                 errors.append(f"Row {i} ({emp_num}): invalid value '{raw}' for '{field}'")
 
+        # Handle quota_slot_expiry — updates the expiry of the employee's assigned slot
+        raw_slot_expiry = row.get("quota_slot_expiry", "").strip()
+        if raw_slot_expiry:
+            if not emp.quota_slot_id:
+                errors.append(f"Row {i} ({emp_num}): quota_slot_expiry provided but employee has no assigned quota slot")
+            else:
+                try:
+                    new_slot_expiry = date.fromisoformat(raw_slot_expiry) if raw_slot_expiry.lower() != "null" else None
+                    slot = (await db.execute(select(QuotaSlot).where(QuotaSlot.id == emp.quota_slot_id))).scalar_one_or_none()
+                    if slot:
+                        old_slot_expiry = str(slot.expiry_date) if slot.expiry_date else None
+                        slot.expiry_date = new_slot_expiry
+                        changes.append(("quota_slot_expiry", old_slot_expiry, str(new_slot_expiry) if new_slot_expiry else None))
+                except ValueError:
+                    errors.append(f"Row {i} ({emp_num}): invalid date '{raw_slot_expiry}' for 'quota_slot_expiry'")
+
         if changes:
             await db.commit()
             await db.refresh(emp)
@@ -304,7 +320,7 @@ async def bulk_update_employees(
                 for field, old_val, new_val in changes:
                     db.add(AuditLog(
                         employee_id=emp.id,
-                        field_name=FIELD_LABELS.get(field, field),
+                        field_name=FIELD_LABELS.get(field, field) if field != "quota_slot_expiry" else "Quota Slot Expiry",
                         old_value=old_val,
                         new_value=new_val,
                         note="Bulk CSV import",
