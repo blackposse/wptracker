@@ -424,6 +424,34 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
   const [renewSaving, setRenewSaving] = useState(false);
   const [renewError, setRenewError] = useState(null);
   const [siteSlots, setSiteSlots] = useState(null);
+  // Quota slot inline edit
+  const [editingSlotExpiry, setEditingSlotExpiry] = useState(false);
+  const [newSlotExpiry, setNewSlotExpiry] = useState("");
+  const [slotSaving, setSlotSaving] = useState(false);
+  const [slotError, setSlotError] = useState(null);
+
+  const handleUpdateSlotExpiry = async () => {
+    if (!newSlotExpiry) { setSlotError("Please select a new expiry date."); return; }
+    setSlotSaving(true); setSlotError(null);
+    try {
+      const res = await apiFetch(`${API}/quota-slots/${emp.quota_slot_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiry_date: newSlotExpiry }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setSlotError(d.detail?.message || d.detail || "Error updating slot");
+      } else {
+        // Re-fetch employee to get updated quota slot status
+        const empRes = await apiFetch(`${API}/employees/${emp.id}`);
+        if (empRes.ok) onUpdated(await empRes.json());
+        setEditingSlotExpiry(false);
+        setNewSlotExpiry("");
+      }
+    } catch (e) { setSlotError(e.message); }
+    finally { setSlotSaving(false); }
+  };
 
   useEffect(() => {
     if (mode === "EDIT" && siteSlots === null) {
@@ -588,15 +616,105 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
             ))}
           </div>
 
-          {emp.quota_slot_expired && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 16 }}>⚠</span>
-              <div>
-                <strong>Quota Slot Expired</strong> — Slot <span style={{ fontFamily: C.mono }}>{emp.quota_slot_number}</span> expired on {emp.quota_slot_expiry}.
-                Work Permit Fee cannot be renewed until the slot expiry is updated.
+          {emp.quota_slot_id && (() => {
+            const slotExpired = emp.quota_slot_expired;
+            const borderColor = slotExpired ? "#b91c1c" : "#16a34a";
+            const bgColor     = slotExpired ? "#fff1f2" : "#f0fdf4";
+            const bdColor     = slotExpired ? "#fecaca" : "#bbf7d0";
+            return (
+              <div style={{ background: bgColor, border: `1px solid ${bdColor}`, borderLeft: `4px solid ${borderColor}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ color: borderColor, fontFamily: C.sans, fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                    📋 Quota Slot
+                  </span>
+                  <span style={{ background: slotExpired ? "#fff1f2" : "#f0fdf4", color: borderColor, border: `1px solid ${bdColor}`, padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>
+                    {slotExpired ? "✗ EXPIRED" : "✓ VALID"}
+                  </span>
+                </div>
+
+                {/* Slot details */}
+                <div style={{ display: "flex", gap: 28, marginBottom: slotExpired ? 12 : 0 }}>
+                  <div>
+                    <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 2 }}>Slot Number</div>
+                    <div style={{ color: C.text, fontFamily: C.mono, fontSize: 13, fontWeight: 600 }}>{emp.quota_slot_number}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 2 }}>Expiry Date</div>
+                    <div style={{ color: borderColor, fontFamily: C.mono, fontSize: 13, fontWeight: 600 }}>{emp.quota_slot_expiry || "—"}</div>
+                  </div>
+                </div>
+
+                {/* Inline expiry update */}
+                {slotExpired && (
+                  <div style={{ borderTop: `1px solid ${bdColor}`, paddingTop: 12 }}>
+                    {!editingSlotExpiry ? (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12 }}>⚠ WPF renewal is blocked until this slot is renewed.</span>
+                        <button onClick={() => { setEditingSlotExpiry(true); setNewSlotExpiry(""); setSlotError(null); }} style={{
+                          background: "#b91c1c", color: "#fff", border: "none",
+                          padding: "6px 16px", borderRadius: 8, cursor: "pointer",
+                          fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+                          boxShadow: "0 2px 6px rgba(185,28,28,0.3)",
+                        }}>Update Expiry</button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12, marginBottom: 8, fontWeight: 600 }}>Set new expiry date for slot {emp.quota_slot_number}:</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <input type="date" value={newSlotExpiry} onChange={e => setNewSlotExpiry(e.target.value)}
+                            style={{ ...inputStyle(false), maxWidth: 180, padding: "7px 10px" }} />
+                          <button onClick={handleUpdateSlotExpiry} disabled={slotSaving} style={{
+                            background: "#16a34a", color: "#fff", border: "none",
+                            padding: "7px 18px", borderRadius: 8, cursor: slotSaving ? "not-allowed" : "pointer",
+                            fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: slotSaving ? 0.7 : 1,
+                          }}>{slotSaving ? "Saving..." : "Save"}</button>
+                          <button onClick={() => { setEditingSlotExpiry(false); setSlotError(null); }} style={{
+                            background: "none", color: C.textSub, border: `1px solid ${C.border}`,
+                            padding: "7px 14px", borderRadius: 8, cursor: "pointer",
+                            fontFamily: C.sans, fontSize: 12,
+                          }}>Cancel</button>
+                        </div>
+                        {slotError && <div style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12, marginTop: 6 }}>⚠ {slotError}</div>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Non-expired: offer update anyway */}
+                {!slotExpired && (
+                  <div style={{ marginTop: 4 }}>
+                    {!editingSlotExpiry ? (
+                      <button onClick={() => { setEditingSlotExpiry(true); setNewSlotExpiry(""); setSlotError(null); }} style={{
+                        background: "none", color: "#16a34a", border: "1px solid #bbf7d0",
+                        padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+                        fontFamily: C.sans, fontSize: 11, fontWeight: 600,
+                      }}>Extend Expiry</button>
+                    ) : (
+                      <div>
+                        <div style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12, marginBottom: 8, fontWeight: 600 }}>Set new expiry date:</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <input type="date" value={newSlotExpiry} onChange={e => setNewSlotExpiry(e.target.value)}
+                            style={{ ...inputStyle(false), maxWidth: 180, padding: "7px 10px" }} />
+                          <button onClick={handleUpdateSlotExpiry} disabled={slotSaving} style={{
+                            background: "#16a34a", color: "#fff", border: "none",
+                            padding: "7px 18px", borderRadius: 8, cursor: slotSaving ? "not-allowed" : "pointer",
+                            fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: slotSaving ? 0.7 : 1,
+                          }}>{slotSaving ? "Saving..." : "Save"}</button>
+                          <button onClick={() => { setEditingSlotExpiry(false); setSlotError(null); }} style={{
+                            background: "none", color: C.textSub, border: `1px solid ${C.border}`,
+                            padding: "7px 14px", borderRadius: 8, cursor: "pointer",
+                            fontFamily: C.sans, fontSize: 12,
+                          }}>Cancel</button>
+                        </div>
+                        {slotError && <div style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12, marginTop: 6 }}>⚠ {slotError}</div>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18, marginBottom: 20 }}>
             <div style={{ color: C.textSub, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: C.sans, marginBottom: 14 }}>Document Status</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
