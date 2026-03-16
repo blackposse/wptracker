@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -44,7 +44,7 @@ const STATUS_CONFIG = {
   Valid:    { color: "#16a34a", bg: "#f0fdf4", label: "VALID",    icon: "✓" },
   Warning:  { color: "#d97706", bg: "#fffbeb", label: "WARNING",  icon: "⚠" },
   Critical: { color: "#dc2626", bg: "#fef2f2", label: "EXPIRING", icon: "!" },
-  Expired:  { color: "#6b7280", bg: "#f9fafb", label: "EXPIRED",  icon: "✗" },
+  Expired:  { color: "#b91c1c", bg: "#fff1f2", label: "EXPIRED",  icon: "✗" },
 };
 
 function daysColor(days) {
@@ -107,9 +107,82 @@ const useFetch = (url) => {
   return { data, loading, error, refetch };
 };
 
+// ── Global Styles (animations + mobile) ──────────────────
+function GlobalStyles() {
+  useEffect(() => {
+    const id = "docguard-global-styles";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      @keyframes fadeScaleIn {
+        from { opacity: 0; transform: scale(0.96) translateY(6px); }
+        to   { opacity: 1; transform: scale(1)    translateY(0); }
+      }
+      @keyframes slideInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes slideTab {
+        from { opacity: 0; transform: translateX(8px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes barFill {
+        from { transform: scaleX(0); }
+        to   { transform: scaleX(1); }
+      }
+      @keyframes toastIn {
+        from { opacity: 0; transform: translateX(110%); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes pulseBadge {
+        0%, 100% { opacity: 1; box-shadow: none; }
+        50%       { opacity: 0.65; box-shadow: 0 0 6px rgba(107,114,128,0.5); }
+      }
+      @keyframes pulseRed {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.6; }
+      }
+      @keyframes shimmerAmber {
+        0%   { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+
+      /* Mobile base */
+      @media (max-width: 768px) {
+        .dg-stat-grid   { grid-template-columns: repeat(2, 1fr) !important; }
+        .dg-doc-grid    { grid-template-columns: repeat(2, 1fr) !important; }
+        .dg-tabs        { overflow-x: auto !important; width: 100% !important; -webkit-overflow-scrolling: touch; }
+        .dg-table-wrap  { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+        .dg-modal-inner { min-width: unset !important; max-width: 96vw !important; width: 96vw !important; padding: 20px 16px !important; border-radius: 12px !important; }
+        .dg-form-grid   { grid-template-columns: 1fr !important; }
+        .dg-header      { padding: 0 16px !important; flex-wrap: wrap; min-height: 52px !important; height: auto !important; gap: 10px !important; }
+        .dg-main        { padding: 16px !important; }
+        .dg-emp-toolbar { flex-direction: column !important; gap: 10px !important; }
+        .dg-emp-actions { flex-wrap: wrap !important; gap: 8px !important; }
+        .dg-search-input { max-width: 100% !important; }
+        .dg-alert-grid  { grid-template-columns: 70px 1fr 120px 90px 80px !important; }
+      }
+      @media (max-width: 480px) {
+        .dg-stat-grid   { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+        .dg-doc-grid    { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+        .dg-tabs button { padding: 7px 12px !important; font-size: 12px !important; }
+        .dg-modal-inner { padding: 16px 12px !important; }
+        .dg-alert-grid  { grid-template-columns: 70px 1fr 90px !important; }
+        .dg-alert-grid .dg-col-site,
+        .dg-alert-grid .dg-col-days { display: none !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { const el = document.getElementById(id); if (el) el.remove(); };
+  }, []);
+  return null;
+}
+
 // ── Badge ─────────────────────────────────────────────────
 const Badge = ({ status }) => {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.Valid;
+  const isExpired = status === "Expired";
   return (
     <span style={{
       background: cfg.bg, color: cfg.color,
@@ -118,51 +191,74 @@ const Badge = ({ status }) => {
       fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
       fontFamily: C.sans, whiteSpace: "nowrap",
       display: "inline-flex", alignItems: "center", gap: 4,
+      animation: isExpired ? "pulseBadge 2.4s ease-in-out infinite" : undefined,
     }}>{cfg.icon} {cfg.label}</span>
   );
 };
 
 // ── Stat Card ─────────────────────────────────────────────
-const StatCard = ({ label, value, sub, accent, glow, onClick }) => (
-  <div
-    onClick={onClick}
-    onMouseEnter={onClick ? e => {
-      e.currentTarget.style.transform = "translateY(-2px)";
-      e.currentTarget.style.boxShadow = `0 8px 24px ${accent}28, 0 2px 8px rgba(0,0,0,0.08)`;
-      e.currentTarget.style.borderColor = accent || C.border;
-    } : undefined}
-    onMouseLeave={onClick ? e => {
-      e.currentTarget.style.transform = "";
-      e.currentTarget.style.boxShadow = glow && value > 0 ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)` : "0 1px 4px rgba(0,0,0,0.04)";
-      e.currentTarget.style.borderColor = C.border;
-    } : undefined}
-    style={{
-      background: C.cardBg,
-      border: `1px solid ${C.border}`,
-      borderRadius: 14,
-      padding: "22px 24px 18px",
-      flex: 1, minWidth: 150,
-      position: "relative", overflow: "hidden",
-      boxShadow: glow && value > 0
-        ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
-        : "0 1px 4px rgba(0,0,0,0.04)",
-      transition: "box-shadow 0.2s, transform 0.15s, border-color 0.15s",
-      cursor: onClick ? "pointer" : "default",
-    }}>
-    <div style={{
-      position: "absolute", top: 0, left: 0, right: 0, height: 3,
-      background: `linear-gradient(90deg, ${accent || C.border}, ${accent ? accent + "50" : C.border})`,
-    }} />
-    <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.sans }}>{label}</div>
-    <div style={{ color: glow && value > 0 ? accent : C.text, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono }}>{value ?? "—"}</div>
-    {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 8, fontFamily: C.sans }}>{sub}</div>}
-    {onClick && <div style={{ color: accent || C.textMuted, fontSize: 11, marginTop: 6, fontFamily: C.sans, opacity: 0.7 }}>Click to view →</div>}
-  </div>
-);
+const StatCard = ({ label, value, sub, accent, glow, onClick }) => {
+  const [displayed, setDisplayed] = useState(0);
+  const prevValue = useRef(null);
+
+  useEffect(() => {
+    if (value == null) return;
+    const target = Number(value);
+    if (prevValue.current === target) return;
+    prevValue.current = target;
+    if (target === 0) { setDisplayed(0); return; }
+    const duration = 700;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setDisplayed(Math.round(ease * target));
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [value]);
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={onClick ? e => {
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = `0 8px 24px ${accent}28, 0 2px 8px rgba(0,0,0,0.08)`;
+        e.currentTarget.style.borderColor = accent || C.border;
+      } : undefined}
+      onMouseLeave={onClick ? e => {
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = glow && value > 0 ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)` : "0 1px 4px rgba(0,0,0,0.04)";
+        e.currentTarget.style.borderColor = C.border;
+      } : undefined}
+      style={{
+        background: C.cardBg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 14,
+        padding: "22px 24px 18px",
+        flex: 1, minWidth: 150,
+        position: "relative", overflow: "hidden",
+        boxShadow: glow && value > 0
+          ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
+          : "0 1px 4px rgba(0,0,0,0.04)",
+        transition: "box-shadow 0.2s, transform 0.15s, border-color 0.15s",
+        cursor: onClick ? "pointer" : "default",
+      }}>
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, height: 3,
+        background: `linear-gradient(90deg, ${accent || C.border}, ${accent ? accent + "50" : C.border})`,
+      }} />
+      <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.sans }}>{label}</div>
+      <div style={{ color: glow && value > 0 ? accent : C.text, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono }}>{value != null ? displayed : "—"}</div>
+      {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 8, fontFamily: C.sans }}>{sub}</div>}
+      {onClick && <div style={{ color: accent || C.textMuted, fontSize: 11, marginTop: 6, fontFamily: C.sans, opacity: 0.7 }}>Click to view →</div>}
+    </div>
+  );
+};
 
 // ── Tabs ──────────────────────────────────────────────────
 const Tabs = ({ tabs, active, onChange }) => (
-  <div style={{
+  <div className="dg-tabs" style={{
     display: "flex", gap: 2,
     background: C.border,
     padding: 3, borderRadius: 12,
@@ -193,13 +289,14 @@ const Modal = ({ title, onClose, children, wide }) => (
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
     backdropFilter: "blur(4px)",
   }} onClick={onClose}>
-    <div style={{
+    <div className="dg-modal-inner" style={{
       background: C.cardBg,
       border: `1px solid ${C.border}`,
       borderRadius: 16, padding: 32,
       minWidth: wide ? 660 : 500, maxWidth: wide ? 740 : 580,
       maxHeight: "90vh", overflowY: "auto",
       boxShadow: "0 24px 64px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.06)",
+      animation: "fadeScaleIn 0.15s ease",
     }} onClick={e => e.stopPropagation()}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h3 style={{ color: C.text, margin: 0, fontSize: 16, fontFamily: C.sans, fontWeight: 700 }}>{title}</h3>
@@ -584,13 +681,13 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
 
       {mode === "EDIT" && (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginBottom: 4 }}>
+          <div className="dg-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px", marginBottom: 4 }}>
             <InputRow label="Emp No." name="_empno" value={emp.employee_number} onChange={() => {}} readOnly />
             <InputRow label="Employer" name="_employer" value={employerName} onChange={() => {}} readOnly />
           </div>
           <div style={{ borderTop: `1px solid ${C.border}`, marginBottom: 16 }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <div className="dg-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
             <InputRow label="Full Name" name="full_name" value={form.full_name} onChange={handleChange} required />
             <InputRow label="Passport No." name="passport_number" value={form.passport_number} onChange={handleChange} placeholder="e.g. A12345678" />
             <InputRow label="Work Permit No." name="work_permit_number" value={form.work_permit_number} onChange={handleChange} placeholder="e.g. WP-2024-00123" />
@@ -974,7 +1071,19 @@ const SiteCard = ({ site, onViewEmployees, onSlotsChanged, onSiteUpdated }) => {
         </div>
       )}
       <div style={{ background: C.borderLight, borderRadius: 4, height: 6, overflow: "hidden", marginBottom: 6 }}>
-        <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: barColor, transition: "width 0.5s", borderRadius: 4 }} />
+        <div style={{
+          height: "100%", width: `${Math.min(pct, 100)}%`, borderRadius: 4,
+          background: pct >= 80 && pct < 100
+            ? `linear-gradient(90deg, ${barColor}, ${barColor}bb, ${barColor})`
+            : barColor,
+          backgroundSize: pct >= 80 && pct < 100 ? "200% 100%" : undefined,
+          transformOrigin: "left center",
+          animation: pct >= 100
+            ? "barFill 0.8s ease-out, pulseRed 1.8s ease-in-out 0.8s infinite"
+            : pct >= 80
+            ? "barFill 0.8s ease-out, shimmerAmber 2s linear 0.8s infinite"
+            : "barFill 0.8s ease-out",
+        }} />
       </div>
       <div style={{ color: C.textMuted, fontSize: 11, fontFamily: C.sans }}>{pct}% utilisation · {site.available_slots} slots available</div>
     </div>
@@ -1054,7 +1163,7 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
           </span>
         ) : (
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {expired > 0  && <span style={{ background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{expired} expired</span>}
+            {expired > 0  && <span style={{ background: "#fff1f2", color: "#b91c1c", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{expired} expired</span>}
             {critical > 0 && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{critical} expiring</span>}
             {warning > 0  && <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{warning} warning</span>}
           </div>
@@ -1095,6 +1204,8 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
                     borderLeft: `3px solid ${STATUS_CONFIG[a.status]?.color || C.border}`,
                     transition: "background 0.1s",
                     cursor: onEmployeeClick ? "pointer" : "default",
+                    animation: "slideInUp 0.2s ease both",
+                    animationDelay: `${i * 30}ms`,
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = "#fff5f5"}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -1156,10 +1267,10 @@ const DashboardTab = ({ onNavigate }) => {
   return (
     <div>
       {/* Stat cards row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div className="dg-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
         <StatCard label="Total Employees"   value={stats?.total_employees}      sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} onClick={() => onNavigate("EMPLOYEES")} />
         <StatCard label="Employers"         value={stats?.total_employers}      sub={`${stats?.total_sites ?? "—"} sites total`} accent="#3b82f6" onClick={() => onNavigate("EMPLOYERS")} />
-        <StatCard label="Expired Docs"      value={stats?.total_alerts_expired} sub="need immediate action" accent="#6b7280" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired", days: 90 })} />
+        <StatCard label="Expired Docs"      value={stats?.total_alerts_expired} sub="need immediate action" accent="#b91c1c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired", days: 90 })} />
         <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within critical threshold" accent="#dc2626" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
         <StatCard label="Warning"           value={stats?.total_alerts_warning} sub="30–90 day window" accent="#d97706" onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning", days: 90 })} />
         <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}    sub="quota full" accent="#a855f7" glow onClick={() => onNavigate("EMPLOYERS")} />
@@ -1171,7 +1282,7 @@ const DashboardTab = ({ onNavigate }) => {
         <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: C.sans, marginBottom: 10 }}>
           Document Health — 90-Day Window
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+        <div className="dg-doc-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
           {categorySummary.map(({ key, label, color }) => {
             const items = byType[key] || [];
             const exp  = items.filter(a => a.status === "Expired").length;
@@ -1196,7 +1307,7 @@ const DashboardTab = ({ onNavigate }) => {
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {exp > 0  && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#6b7280", fontFamily: C.sans, fontSize: 12 }}>Expired</span><span style={{ background: "#f3f4f6", color: "#6b7280", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{exp}</span></div>}
+                    {exp > 0  && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12 }}>Expired</span><span style={{ background: "#fff1f2", color: "#b91c1c", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{exp}</span></div>}
                     {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 12 }}>Expiring</span><span style={{ background: "#fef2f2", color: "#dc2626", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{crit}</span></div>}
                     {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#d97706", fontFamily: C.sans, fontSize: 12 }}>Warning</span><span style={{ background: "#fffbeb", color: "#d97706", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{warn}</span></div>}
                   </div>
@@ -1525,8 +1636,23 @@ const AlertsTab = ({ initialView = "expiring", initialFilter = "All", initialDay
 };
 
 // ── Employees Tab ─────────────────────────────────────────
+const STATUS_RANK = { Expired: 4, Critical: 3, Warning: 2, Valid: 1 };
+function worstStatus(emp) {
+  const statuses = [
+    emp.passport_status?.status,
+    emp.visa_stamp_status?.status,
+    emp.insurance_status?.status,
+    emp.work_permit_fee_status?.status,
+    emp.medical_status?.status,
+  ].filter(Boolean);
+  if (!statuses.length) return null;
+  return statuses.reduce((best, s) => (STATUS_RANK[s] || 0) > (STATUS_RANK[best] || 0) ? s : best);
+}
+
+const PAGE_SIZE = 50;
+
 const EmployeesTab = () => {
-  const { data: employees, loading } = useFetch(`${API}/employees/?limit=200`);
+  const { data: employees, loading } = useFetch(`${API}/employees/?limit=500`);
   const { data: sites }     = useFetch(`${API}/sites/`);
   const { data: employers } = useFetch(`${API}/employers/`);
   const [showAddForm, setShowAddForm]     = useState(false);
@@ -1539,8 +1665,24 @@ const EmployeesTab = () => {
   const [search, setSearch] = useState("");
   const [showResigned, setShowResigned] = useState(false);
   const [formQuotaSlots, setFormQuotaSlots] = useState([]);
+  // filters
+  const [filterEmployer, setFilterEmployer] = useState("");
+  const [filterSite, setFilterSite]         = useState("");
+  const [filterStatus, setFilterStatus]     = useState("");
+  // sort
+  const [sortKey, setSortKey]   = useState("full_name");
+  const [sortDir, setSortDir]   = useState("asc");
+  // pagination
+  const [page, setPage] = useState(1);
 
   useEffect(() => { if (employees) setLocalEmployees(employees); }, [employees]);
+  // reset page on any filter change
+  useEffect(() => { setPage(1); }, [search, filterEmployer, filterSite, filterStatus, showResigned]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
 
   const handleFormChange = e => {
     const { name, value } = e.target;
@@ -1601,12 +1743,22 @@ const EmployeesTab = () => {
 
   const employerOptions = (employers || []).map(e => ({ value: e.id, label: e.name }));
 
+  // Sites available for the selected employer filter
+  const siteOptions = (sites || [])
+    .filter(s => !filterEmployer || s.employer_id === parseInt(filterEmployer));
+
   const lowerSearch = search.toLowerCase().trim();
-  const list = (localEmployees || []).filter(emp => {
+  const allFiltered = (localEmployees || []).filter(emp => {
     if (!showResigned && emp.resigned) return false;
+    if (filterEmployer && emp.employer_id !== parseInt(filterEmployer)) return false;
+    if (filterSite     && emp.site_id     !== parseInt(filterSite))     return false;
+    if (filterStatus) {
+      const ws = worstStatus(emp);
+      if (ws !== filterStatus) return false;
+    }
     if (!lowerSearch) return true;
-    const empName = (employers || []).find(e => e.id === emp.employer_id)?.name || "";
-    const siteName = (sites || []).find(s => s.id === emp.site_id)?.site_name || "";
+    const empName  = (employers || []).find(e => e.id === emp.employer_id)?.name || "";
+    const siteName = (sites     || []).find(s => s.id === emp.site_id)?.site_name || "";
     return (
       emp.full_name?.toLowerCase().includes(lowerSearch) ||
       emp.employee_number?.toLowerCase().includes(lowerSearch) ||
@@ -1614,28 +1766,96 @@ const EmployeesTab = () => {
       emp.work_permit_number?.toLowerCase().includes(lowerSearch) ||
       empName.toLowerCase().includes(lowerSearch) ||
       siteName.toLowerCase().includes(lowerSearch) ||
-      emp.nationality?.toLowerCase().includes(lowerSearch)
+      emp.nationality?.toLowerCase().includes(lowerSearch) ||
+      emp.job_title?.toLowerCase().includes(lowerSearch)
     );
   });
+
+  // Sort
+  const sorted = [...allFiltered].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "full_name")    { av = a.full_name || ""; bv = b.full_name || ""; }
+    else if (sortKey === "employer") { av = (employers||[]).find(e=>e.id===a.employer_id)?.name||""; bv = (employers||[]).find(e=>e.id===b.employer_id)?.name||""; }
+    else if (sortKey === "site")     { av = (sites||[]).find(s=>s.id===a.site_id)?.site_name||""; bv = (sites||[]).find(s=>s.id===b.site_id)?.site_name||""; }
+    else if (sortKey === "nationality") { av = a.nationality||""; bv = b.nationality||""; }
+    else if (sortKey === "status")   { av = STATUS_RANK[worstStatus(a)]||0; bv = STATUS_RANK[worstStatus(b)]||0; return sortDir==="asc" ? bv-av : av-bv; }
+    else                             { av = a[sortKey]||""; bv = b[sortKey]||""; }
+    return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const list = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const resignedCount = (localEmployees || []).filter(e => e.resigned).length;
+
+  // Status summary of ALL filtered rows (not just current page)
+  const summaryExpired  = allFiltered.filter(e => worstStatus(e) === "Expired").length;
+  const summaryCritical = allFiltered.filter(e => worstStatus(e) === "Critical").length;
+  const summaryWarning  = allFiltered.filter(e => worstStatus(e) === "Warning").length;
+  const summaryValid    = allFiltered.filter(e => worstStatus(e) === "Valid").length;
+
+  const selectStyle = {
+    background: C.cardBg, border: `1px solid ${C.border}`, color: C.text,
+    padding: "8px 12px", borderRadius: 9, fontFamily: C.sans, fontSize: 13,
+    outline: "none", cursor: "pointer", appearance: "none",
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center",
+    paddingRight: 30,
+  };
+
+  const SortTh = ({ label, sortId, style: extraStyle }) => {
+    const active = sortKey === sortId;
+    return (
+      <th onClick={() => handleSort(sortId)} style={{
+        color: active ? C.accent : C.textMuted,
+        fontFamily: C.sans, fontSize: 11, fontWeight: 600,
+        letterSpacing: "0.04em", padding: "12px 12px",
+        textAlign: "left", textTransform: "uppercase",
+        cursor: "pointer", userSelect: "none",
+        whiteSpace: "nowrap",
+        ...extraStyle,
+      }}>
+        {label}
+        <span style={{ marginLeft: 4, opacity: active ? 1 : 0.3, fontSize: 10 }}>
+          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </th>
+    );
+  };
+
+  const hasActiveFilter = filterEmployer || filterSite || filterStatus || search;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18, gap: 12, alignItems: "center" }}>
+      {/* ── Toolbar ── */}
+      <div className="dg-emp-toolbar" style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="text"
-          placeholder="Search by name, emp no., passport no., work permit no., employer, site..."
+          placeholder="Search name, emp no., passport, WP no., employer, site, job title..."
           value={search}
           onChange={e => setSearch(e.target.value)}
+          className="dg-search-input"
           style={{
-            flex: 1, maxWidth: 440, background: C.cardBg, border: `1px solid ${C.border}`,
+            flex: 1, minWidth: 220, maxWidth: 400, background: C.cardBg, border: `1px solid ${C.border}`,
             color: C.text, padding: "9px 14px", borderRadius: 10,
             fontFamily: C.sans, fontSize: 13, outline: "none",
             boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
           }}
         />
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {success && <div style={{ color: "#16a34a", fontFamily: C.sans, fontSize: 13, fontWeight: 500 }}>{success}</div>}
+        <div className="dg-emp-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {success && (
+            <div style={{
+              position: "fixed", top: 20, right: 20, zIndex: 200,
+              background: C.cardBg, border: "1px solid #bbf7d0",
+              borderLeft: "4px solid #16a34a", borderRadius: 10,
+              padding: "12px 20px", boxShadow: "0 6px 24px rgba(0,0,0,0.12)",
+              color: "#15803d", fontFamily: C.sans, fontSize: 13, fontWeight: 600,
+              display: "flex", alignItems: "center", gap: 8,
+              animation: "toastIn 0.3s cubic-bezier(0.22,1,0.36,1)",
+              pointerEvents: "none",
+            }}>✓ {success}</div>
+          )}
           {resignedCount > 0 && (
             <button onClick={() => setShowResigned(v => !v)} style={{
               background: showResigned ? "#f9fafb" : C.cardBg,
@@ -1661,54 +1881,166 @@ const EmployeesTab = () => {
         </div>
       </div>
 
+      {/* ── Filter bar ── */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={filterEmployer} onChange={e => { setFilterEmployer(e.target.value); setFilterSite(""); }} style={{ ...selectStyle, minWidth: 160 }}>
+          <option value="">All Employers</option>
+          {(employers || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        <select value={filterSite} onChange={e => setFilterSite(e.target.value)} style={{ ...selectStyle, minWidth: 150 }} disabled={siteOptions.length === 0}>
+          <option value="">All Sites</option>
+          {siteOptions.map(s => <option key={s.id} value={s.id}>{s.site_name}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...selectStyle, minWidth: 140 }}>
+          <option value="">All Statuses</option>
+          <option value="Expired">Expired</option>
+          <option value="Critical">Expiring (Critical)</option>
+          <option value="Warning">Warning</option>
+          <option value="Valid">Valid</option>
+        </select>
+        {hasActiveFilter && (
+          <button onClick={() => { setSearch(""); setFilterEmployer(""); setFilterSite(""); setFilterStatus(""); }} style={{
+            background: "none", border: `1px solid ${C.border}`, color: C.textMuted,
+            padding: "7px 14px", borderRadius: 9, cursor: "pointer",
+            fontFamily: C.sans, fontSize: 12,
+          }}>✕ Clear filters</button>
+        )}
+        <div style={{ flex: 1 }} />
+        {/* Status summary pills */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {summaryExpired  > 0 && <span onClick={() => setFilterStatus("Expired")}  style={{ background: "#fff1f2", color: "#b91c1c", border: "1px solid #fecaca", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryExpired} Expired</span>}
+          {summaryCritical > 0 && <span onClick={() => setFilterStatus("Critical")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryCritical} Expiring</span>}
+          {summaryWarning  > 0 && <span onClick={() => setFilterStatus("Warning")}  style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryWarning} Warning</span>}
+          {summaryValid    > 0 && <span onClick={() => setFilterStatus("Valid")}    style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryValid} Valid</span>}
+          <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>{allFiltered.length} employee{allFiltered.length !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+
       {loading && !localEmployees ? (
         <div style={{ color: C.textMuted, fontFamily: C.sans, padding: 48, textAlign: "center" }}>Loading...</div>
       ) : (
-        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <>
+        <div className="dg-table-wrap" style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960 }}>
             <thead>
               <tr style={{ background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
-                {["Emp No.", "Name", "Passport No.", "WP No.", "Employer", "Site", "Nationality", "Passport", "Visa", "Insurance", "Work Permit", "Medical"].map(h => (
-                  <th key={h} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 12px", textAlign: "left", textTransform: "uppercase" }}>{h}</th>
-                ))}
+                <SortTh label="Emp No."     sortId="employee_number" />
+                <SortTh label="Name"        sortId="full_name" />
+                <SortTh label="Job Title"   sortId="job_title" />
+                <SortTh label="Passport No." sortId="passport_number" />
+                <SortTh label="WP No."      sortId="work_permit_number" />
+                <SortTh label="Employer"    sortId="employer" />
+                <SortTh label="Site"        sortId="site" />
+                <SortTh label="Nationality" sortId="nationality" />
+                <SortTh label="Worst Status" sortId="status" />
+                <th style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "12px 12px", textAlign: "left", textTransform: "uppercase" }}>Documents</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((emp) => (
-                <tr key={emp.id}
-                  onClick={() => setSelectedEmp(emp)}
-                  style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: "pointer", transition: "background 0.1s", opacity: emp.resigned ? 0.55 : 1 }}
-                  onMouseEnter={e => e.currentTarget.style.background = emp.resigned ? "#f9fafb" : "#fff5f5"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.employee_number}</td>
-                  <td style={{ padding: "11px 12px", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
-                    <span style={{ color: emp.resigned ? C.textMuted : C.accent }}>{emp.full_name}</span>
-                    {emp.resigned && <span style={{ marginLeft: 8, background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, fontFamily: C.sans }}>RESIGNED</span>}
-                  </td>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.passport_number || <span style={{ color: C.textMuted }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.work_permit_number || <span style={{ color: C.textMuted }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>
-                    {(employers || []).find(e => e.id === emp.employer_id)?.name || emp.employer_id}
-                  </td>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>
-                    {(sites || []).find(s => s.id === emp.site_id)?.site_name || emp.site_id}
-                  </td>
-                  <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.nationality || "—"}</td>
-                  <td style={{ padding: "11px 12px" }}>{emp.passport_status        ? <Badge status={emp.passport_status.status}        /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px" }}>{emp.visa_stamp_status      ? <Badge status={emp.visa_stamp_status.status}      /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px" }}>{emp.insurance_status       ? <Badge status={emp.insurance_status.status}       /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px" }}>{emp.work_permit_fee_status ? <Badge status={emp.work_permit_fee_status.status} /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
-                  <td style={{ padding: "11px 12px" }}>{emp.medical_status         ? <Badge status={emp.medical_status.status}         /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}</td>
-                </tr>
-              ))}
+              {list.map((emp, i) => {
+                const ws = worstStatus(emp);
+                const wsCfg = STATUS_CONFIG[ws] || {};
+                return (
+                  <tr key={emp.id}
+                    onClick={() => setSelectedEmp(emp)}
+                    style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: "pointer", transition: "background 0.1s", opacity: emp.resigned ? 0.55 : 1, animation: "slideInUp 0.15s ease both", animationDelay: `${i * 15}ms` }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12, whiteSpace: "nowrap" }}>{emp.employee_number}</td>
+                    <td style={{ padding: "11px 12px", fontFamily: C.sans, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <span style={{ color: emp.resigned ? C.textMuted : C.accent }}>{emp.full_name}</span>
+                      {emp.resigned && <span style={{ marginLeft: 8, background: "#f3f4f6", color: "#6b7280", border: "1px solid #e5e7eb", padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, fontFamily: C.sans }}>RESIGNED</span>}
+                    </td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.job_title || <span style={{ color: C.textMuted }}>—</span>}</td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.passport_number || <span style={{ color: C.textMuted }}>—</span>}</td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{emp.work_permit_number || <span style={{ color: C.textMuted }}>—</span>}</td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12, whiteSpace: "nowrap" }}>
+                      {(employers || []).find(e => e.id === emp.employer_id)?.name || emp.employer_id}
+                    </td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12, whiteSpace: "nowrap" }}>
+                      {(sites || []).find(s => s.id === emp.site_id)?.site_name || emp.site_id}
+                    </td>
+                    <td style={{ padding: "11px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.nationality || "—"}</td>
+                    <td style={{ padding: "11px 12px" }}>
+                      {ws ? (
+                        <span style={{
+                          background: wsCfg.bg, color: wsCfg.color,
+                          border: `1px solid ${wsCfg.color}30`,
+                          padding: "3px 10px", borderRadius: 20, fontSize: 11,
+                          fontFamily: C.sans, fontWeight: 700,
+                        }}>{wsCfg.icon} {wsCfg.label}</span>
+                      ) : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}
+                    </td>
+                    <td style={{ padding: "11px 12px" }}>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {[
+                          { key: "passport_status",        short: "PP" },
+                          { key: "visa_stamp_status",      short: "VS" },
+                          { key: "insurance_status",       short: "IN" },
+                          { key: "work_permit_fee_status", short: "WP" },
+                          { key: "medical_status",         short: "MD" },
+                        ].map(({ key, short }) => {
+                          const st = emp[key]?.status;
+                          const cfg = STATUS_CONFIG[st];
+                          return (
+                            <span key={key} title={`${short}: ${st || "missing"}`} style={{
+                              background: cfg ? cfg.bg : "#f3f4f6",
+                              color: cfg ? cfg.color : C.textMuted,
+                              border: `1px solid ${cfg ? cfg.color + "40" : C.border}`,
+                              padding: "2px 6px", borderRadius: 6,
+                              fontSize: 10, fontFamily: C.mono, fontWeight: 700,
+                            }}>{short}</span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {list.length === 0 && (
             <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: 40, textAlign: "center" }}>
-              {search ? "No employees match your search." : "No employees found."}
+              {hasActiveFilter ? "No employees match your filters." : "No employees found."}
             </div>
           )}
         </div>
+
+        {/* ── Pagination ── */}
+        {totalPages > 1 && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 16 }}>
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} style={{
+              background: C.cardBg, border: `1px solid ${C.border}`, color: page===1 ? C.textMuted : C.text,
+              padding: "7px 14px", borderRadius: 8, cursor: page===1 ? "default" : "pointer",
+              fontFamily: C.sans, fontSize: 13,
+            }}>←</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2).reduce((acc, p, idx, arr) => {
+              if (idx > 0 && p - arr[idx-1] > 1) acc.push("…");
+              acc.push(p);
+              return acc;
+            }, []).map((p, i) => p === "…" ? (
+              <span key={`ellipsis-${i}`} style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13, padding: "0 4px" }}>…</span>
+            ) : (
+              <button key={p} onClick={() => setPage(p)} style={{
+                background: p === page ? C.accent : C.cardBg,
+                border: `1px solid ${p === page ? C.accent : C.border}`,
+                color: p === page ? "#fff" : C.text,
+                padding: "7px 13px", borderRadius: 8, cursor: "pointer",
+                fontFamily: C.sans, fontSize: 13, fontWeight: p === page ? 700 : 400,
+                minWidth: 36,
+              }}>{p}</button>
+            ))}
+            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} style={{
+              background: C.cardBg, border: `1px solid ${C.border}`, color: page===totalPages ? C.textMuted : C.text,
+              padding: "7px 14px", borderRadius: 8, cursor: page===totalPages ? "default" : "pointer",
+              fontFamily: C.sans, fontSize: 13,
+            }}>→</button>
+            <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginLeft: 6 }}>
+              Page {page} of {totalPages} · {allFiltered.length} total
+            </span>
+          </div>
+        )}
+        </>
       )}
 
       {selectedEmp && (
@@ -1729,7 +2061,7 @@ const EmployeesTab = () => {
               ⚠ {error}
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+          <div className="dg-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
             <InputRow label="Full Name" name="full_name" value={form.full_name || ""} onChange={handleFormChange} required />
             <InputRow label="Passport No." name="passport_number" value={form.passport_number || ""} onChange={handleFormChange} placeholder="e.g. A12345678" />
             <InputRow label="Work Permit No." name="work_permit_number" value={form.work_permit_number || ""} onChange={handleFormChange} placeholder="e.g. WP-2024-00123" />
@@ -1798,6 +2130,8 @@ const EmployersTab = () => {
 
   const [togglingId, setTogglingId] = useState(null);
   const [toggleError, setToggleError] = useState(null);
+  const [collapsedIds, setCollapsedIds] = useState({});
+  const toggleCollapse = (id) => setCollapsedIds(s => ({ ...s, [id]: !s[id] }));
 
   const handleToggleEmployer = async (employerId) => {
     setTogglingId(employerId);
@@ -1910,6 +2244,7 @@ const EmployersTab = () => {
             const totalSlots = empSites.reduce((s, x) => s + (x.total_quota_slots || 0), 0);
             const usedSlots  = empSites.reduce((s, x) => s + (x.used_slots || 0), 0);
             const isDisabled = employer.is_active === false;
+            const isCollapsed = !!collapsedIds[employer.id];
             return (
               <div key={employer.id} style={{
                 background: C.cardBg,
@@ -1920,7 +2255,7 @@ const EmployersTab = () => {
                 transition: "opacity 0.2s, border-color 0.2s",
               }}>
                 {/* Employer header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 22px", background: isDisabled ? "#fef2f2" : C.pageBg, borderBottom: empSites.length > 0 ? `1px solid ${C.border}` : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 22px", background: isDisabled ? "#fef2f2" : C.pageBg, borderBottom: empSites.length > 0 && !isCollapsed ? `1px solid ${C.border}` : "none" }}>
                   <div style={{
                     width: 36, height: 36, borderRadius: 10,
                     background: isDisabled ? "#fee2e2" : C.accentBg,
@@ -1955,6 +2290,16 @@ const EmployersTab = () => {
                       fontFamily: C.sans, fontSize: 12, fontWeight: 600,
                     }}>+ Add Site</button>
                   )}
+                  {empSites.length > 0 && (
+                    <button onClick={() => toggleCollapse(employer.id)} style={{
+                      background: "transparent", color: C.textMuted, border: `1px solid ${C.border}`,
+                      padding: "6px 12px", borderRadius: 8, cursor: "pointer",
+                      fontFamily: C.sans, fontSize: 12, display: "flex", alignItems: "center", gap: 4,
+                    }}>
+                      <span style={{ display: "inline-block", transition: "transform 0.2s", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+                      {isCollapsed ? "Show" : "Hide"}
+                    </button>
+                  )}
                   <button
                     onClick={() => handleToggleEmployer(employer.id)}
                     disabled={togglingId === employer.id}
@@ -1971,8 +2316,8 @@ const EmployersTab = () => {
                     {togglingId === employer.id ? "..." : isDisabled ? "Enable" : "Disable"}
                   </button>
                 </div>
-                {empSites.length > 0 && (
-                  <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
+                {empSites.length > 0 && !isCollapsed && (
+                  <div style={{ padding: "14px 22px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
                     {empSites.map(site => <SiteCard key={site.id} site={site} onViewEmployees={handleViewSiteEmployees} onSiteUpdated={() => refetchSites()} />)}
                   </div>
                 )}
@@ -2576,7 +2921,7 @@ function pdfStatusStyle(status) {
   if (status === "Valid")    return { fillColor: [240,253,244], textColor: [22,163,74],   fontStyle: "bold" };
   if (status === "Warning")  return { fillColor: [255,251,235], textColor: [217,119,6],   fontStyle: "bold" };
   if (status === "Critical") return { fillColor: [254,242,242], textColor: [220,38,38],   fontStyle: "bold" };
-  if (status === "Expired")  return { fillColor: [241,245,249], textColor: [100,116,139], fontStyle: "bold" };
+  if (status === "Expired")  return { fillColor: [254,242,242], textColor: [185,28,28],   fontStyle: "bold" };
   return { fillColor: [248,250,252], textColor: [148,163,184] };
 }
 
@@ -2610,7 +2955,7 @@ function exportCompliancePDF(employees, employerName) {
   const sumItems = [
     { label: "EMPLOYEES",        value: String(employees.length), color: [15,23,42] },
     { label: "COMPLIANCE SCORE", value: `${score}%`,              color: score >= 80 ? [22,163,74] : score >= 60 ? [217,119,6] : [220,38,38] },
-    { label: "EXPIRED",          value: String(expired),          color: expired  > 0 ? [100,116,139] : [22,163,74] },
+    { label: "EXPIRED",          value: String(expired),          color: expired  > 0 ? [185,28,28]   : [22,163,74] },
     { label: "CRITICAL",         value: String(critical),         color: critical > 0 ? [220,38,38]   : [22,163,74] },
     { label: "WARNING",          value: String(warning),          color: warning  > 0 ? [217,119,6]   : [22,163,74] },
   ];
@@ -2749,11 +3094,45 @@ function exportMissingPDF(alerts, employerName) {
   doc.save(`MissingDocs_${today.replace(/\s+/g, "-")}.pdf`);
 }
 
+function exportExpiryByTypePDF(reportData, employerName) {
+  // eslint-disable-next-line new-cap
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const docLabel = reportData.docType === "all" ? "All Documents" : reportData.docTypeLabel || reportData.docType;
+  const dateRange = `${reportData.dateFrom || "—"} to ${reportData.dateTo || "—"}`;
+  const subtitle = `${employerName || "All Employers"} | ${docLabel} | ${dateRange}`;
+  const today = pdfHeader(doc, "EXPIRY REPORT BY TYPE", subtitle, true);
+  const showDocCol = reportData.docType === "all";
+  const head = showDocCol
+    ? [["Emp ID", "Full Name", "Nationality", "Employer", "Site", "Document", "Expiry Date", "Days", "Status"]]
+    : [["Emp ID", "Full Name", "Nationality", "Employer", "Site", "Expiry Date", "Days", "Status"]];
+  const body = reportData.alerts.map(a => {
+    const days = a.days_remaining < 0 ? `${a.days_remaining}d` : `+${a.days_remaining}d`;
+    return showDocCol
+      ? [a.employee_number, a.full_name, a.nationality || "—", a.employer_name, a.site_name, a.expiry_type, a.expiry_date, days, a.status]
+      : [a.employee_number, a.full_name, a.nationality || "—", a.employer_name, a.site_name, a.expiry_date, days, a.status];
+  });
+  const statusColIdx = showDocCol ? 8 : 7;
+  autoTable(doc, {
+    startY: 28,
+    head,
+    body,
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold" },
+    didParseCell: (d) => {
+      if (d.section === "body" && d.column.index === statusColIdx) {
+        const s = pdfStatusStyle(d.cell.raw); d.cell.styles.fillColor = s.fillColor; d.cell.styles.textColor = s.textColor; d.cell.styles.fontStyle = s.fontStyle;
+      }
+    },
+  });
+  doc.save(`ExpiryReport_${docLabel.replace(/\s+/g,"-")}_${today.replace(/\s+/g,"-")}.pdf`);
+}
+
 function exportReportPDF(reportData, employerName) {
   if (reportData.type === "compliance" || reportData.type === "noncompliant") exportCompliancePDF(reportData.employees, employerName);
   else if (reportData.type === "expiry") exportExpiryPDF(reportData.alerts, employerName);
   else if (reportData.type === "missing") exportMissingPDF(reportData.alerts, employerName);
   else if (reportData.type === "quota") exportQuotaPDF(reportData.sites);
+  else if (reportData.type === "expiry_by_type") exportExpiryByTypePDF(reportData, employerName);
 }
 
 function exportReportExcel(reportData, employerName) {
@@ -2816,17 +3195,59 @@ function exportReportExcel(reportData, employerName) {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...reportData.sites.map(s => [s.employer_name, s.site_name, s.total_quota_slots, s.used_slots, s.available_slots, `${(s.quota_utilisation_pct || 0).toFixed(1)}%`])]);
     ws["!cols"] = [24,24,14,12,12,14].map(w => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws, "Site Quota");
+
+  } else if (reportData.type === "expiry_by_type") {
+    const docLabel = reportData.docTypeLabel || reportData.docType;
+    const dateRange = `${reportData.dateFrom || "start"} to ${reportData.dateTo || "end"}`;
+    const summaryWs = XLSX.utils.aoa_to_sheet([
+      ["EXPIRY REPORT BY TYPE"],
+      ["Employer:",    employerName || "All Employers"],
+      ["Document:",    docLabel],
+      ["Date Range:",  dateRange],
+      ["Generated:",   today],
+      [],
+      ["Total:", reportData.alerts.length],
+      ["Expired:",  reportData.summary?.expired  ?? 0],
+      ["Critical:", reportData.summary?.critical ?? 0],
+      ["Warning:",  reportData.summary?.warning  ?? 0],
+      ["Valid:",    reportData.summary?.total ? reportData.summary.total - (reportData.summary.expired + reportData.summary.critical + reportData.summary.warning) : 0],
+    ]);
+    summaryWs["!cols"] = [{ wch: 18 }, { wch: 32 }];
+    XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
+
+    const showDocCol = reportData.docType === "all";
+    const headers = showDocCol
+      ? ["Emp ID","Full Name","Nationality","Employer","Site","Document","Expiry Date","Days Remaining","Status"]
+      : ["Emp ID","Full Name","Nationality","Employer","Site","Expiry Date","Days Remaining","Status"];
+    const rows = reportData.alerts.map(a => showDocCol
+      ? [a.employee_number, a.full_name, a.nationality || "", a.employer_name, a.site_name, a.expiry_type, a.expiry_date, a.days_remaining, a.status]
+      : [a.employee_number, a.full_name, a.nationality || "", a.employer_name, a.site_name, a.expiry_date, a.days_remaining, a.status]
+    );
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = (showDocCol ? [14,28,16,22,22,16,14,16,12] : [14,28,16,22,22,14,16,12]).map(w => ({ wch: w }));
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws, "Expiry Report");
   }
 
   XLSX.writeFile(wb, `WPTracker_Report_${today.replace(/\//g,"-")}.xlsx`);
 }
 
 const REPORT_TYPES = [
-  { value: "compliance",   label: "Employer Compliance Report" },
-  { value: "expiry",       label: "Expiry Pipeline Report" },
-  { value: "noncompliant", label: "Non-Compliant Employees" },
-  { value: "missing",      label: "Missing Documents Report" },
-  { value: "quota",        label: "Site Quota Report" },
+  { value: "expiry_by_type", label: "Expiry Report by Type & Date Range" },
+  { value: "compliance",     label: "Employer Compliance Report" },
+  { value: "expiry",         label: "Expiry Pipeline Report" },
+  { value: "noncompliant",   label: "Non-Compliant Employees" },
+  { value: "missing",        label: "Missing Documents Report" },
+  { value: "quota",          label: "Site Quota Report" },
+];
+
+const DOC_TYPES = [
+  { value: "all",              label: "All Documents" },
+  { value: "work_permit_fee",  label: "Work Permit Fee" },
+  { value: "passport",         label: "Passport" },
+  { value: "visa_stamp",       label: "Visa Stamp" },
+  { value: "insurance",        label: "Insurance" },
+  { value: "medical",          label: "Medical" },
 ];
 
 const ReportPreview = ({ data }) => {
@@ -2847,7 +3268,7 @@ const ReportPreview = ({ data }) => {
           {[
             { label: "Employees",        value: employees.length, color: C.text },
             { label: "Compliance Score", value: `${score}%`,      color: score >= 80 ? "#16a34a" : score >= 60 ? "#d97706" : "#dc2626" },
-            { label: "Expired",          value: expired,           color: expired  > 0 ? "#6b7280" : "#16a34a" },
+            { label: "Expired",          value: expired,           color: expired  > 0 ? "#b91c1c" : "#16a34a" },
             { label: "Critical",         value: critical,          color: critical > 0 ? "#dc2626" : "#16a34a" },
             { label: "Warning",          value: warning,           color: warning  > 0 ? "#d97706" : "#16a34a" },
           ].map((s, i) => (
@@ -2966,6 +3387,78 @@ const ReportPreview = ({ data }) => {
     );
   }
 
+  if (data.type === "expiry_by_type") {
+    const { alerts, summary, docType, docTypeLabel, dateFrom, dateTo } = data;
+    const showDocCol = docType === "all";
+    const expired  = summary?.expired  ?? 0;
+    const critical = summary?.critical ?? 0;
+    const warning  = summary?.warning  ?? 0;
+    const valid    = (summary?.total ?? 0) - expired - critical - warning;
+    const docLabel = docTypeLabel || DOC_TYPES.find(d => d.value === docType)?.label || docType;
+    return (
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        {/* Header bar */}
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, background: "#f8fafc", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", padding: "3px 12px", borderRadius: 20, fontFamily: C.sans, fontSize: 12, fontWeight: 700 }}>{docLabel}</span>
+          {dateFrom && <span style={{ color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{dateFrom} → {dateTo}</span>}
+          <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>{alerts.length} employees</span>
+        </div>
+        {/* Summary stats */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
+          {[
+            { label: "Total",    value: alerts.length, color: C.text },
+            { label: "Expired",  value: expired,       color: expired  > 0 ? "#b91c1c" : "#16a34a" },
+            { label: "Critical", value: critical,       color: critical > 0 ? "#dc2626" : "#16a34a" },
+            { label: "Warning",  value: warning,        color: warning  > 0 ? "#d97706" : "#16a34a" },
+            { label: "Valid",    value: valid,           color: valid    > 0 ? "#16a34a" : C.textMuted },
+          ].map((s, i) => (
+            <div key={i} style={{ flex: 1, padding: "14px 20px", borderRight: `1px solid ${C.border}` }}>
+              <div style={{ fontFamily: C.mono, fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
+              <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textSub, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {/* Table */}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#f8fafc" }}>
+                {["Emp ID","Name","Nationality","Employer","Site", ...(showDocCol ? ["Document"] : []),"Expiry Date","Days","Status"].map(h => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map((a, i) => {
+                const cfg = STATUS_CONFIG[a.status];
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                    <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{a.employee_number}</td>
+                    <td style={{ padding: "8px 12px", color: C.text, fontWeight: 500, whiteSpace: "nowrap" }}>{a.full_name}</td>
+                    <td style={{ padding: "8px 12px", color: C.textSub }}>{a.nationality || "—"}</td>
+                    <td style={{ padding: "8px 12px", color: C.textSub }}>{a.employer_name}</td>
+                    <td style={{ padding: "8px 12px", color: C.textSub }}>{a.site_name}</td>
+                    {showDocCol && <td style={{ padding: "8px 12px", color: C.textSub, fontWeight: 500 }}>{a.expiry_type}</td>}
+                    <td style={{ padding: "8px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{a.expiry_date}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: C.mono, fontSize: 11, fontWeight: 600, color: daysColor(a.days_remaining) }}>
+                      {a.days_remaining < 0 ? `${a.days_remaining}d` : `+${a.days_remaining}d`}
+                    </td>
+                    <td style={{ padding: "6px 12px" }}>
+                      <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: cfg?.bg || "#f8fafc", color: cfg?.color || C.textMuted, fontWeight: 600, fontSize: 10, letterSpacing: "0.05em" }}>
+                        {cfg?.label || a.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {alerts.length === 0 && <div style={{ padding: 40, textAlign: "center", fontFamily: C.sans, color: C.textMuted }}>No documents expiring in this date range</div>}
+      </div>
+    );
+  }
+
   if (data.type === "missing") {
     const { alerts } = data;
     const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
@@ -3058,26 +3551,53 @@ const ReportPreview = ({ data }) => {
 };
 
 const ReportsTab = () => {
-  const [reportType, setReportType] = useState("compliance");
+  const [reportType, setReportType] = useState("expiry_by_type");
   const [employerId, setEmployerId] = useState("");
   const [expiryDays, setExpiryDays] = useState(60);
+  const [docType, setDocType] = useState("work_permit_fee");
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().split("T")[0];
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 1); d.setDate(0);
+    return d.toISOString().split("T")[0];
+  });
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const { data: employers } = useFetch(`${API}/employers`);
+  const { data: employers } = useFetch(`${API}/employers/`);
   const selectedEmployer = employers?.find(e => String(e.id) === employerId);
+
+  // Quick month picker helpers
+  const setMonth = (offset) => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const from = new Date(d.getFullYear(), d.getMonth(), 1);
+    const to   = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    setDateFrom(from.toISOString().split("T")[0]);
+    setDateTo(to.toISOString().split("T")[0]);
+  };
 
   const generate = async () => {
     setLoading(true); setErr(null); setReportData(null);
     try {
-      if (reportType === "compliance" || reportType === "noncompliant") {
+      if (reportType === "expiry_by_type") {
+        let url = `${API}/alerts/expiry-by-type?doc_type=${docType}`;
+        if (employerId) url += `&employer_id=${employerId}`;
+        if (dateFrom)   url += `&date_from=${dateFrom}`;
+        if (dateTo)     url += `&date_to=${dateTo}`;
+        const data = await apiFetch(url).then(r => r.json());
+        const docTypeLabel = DOC_TYPES.find(d => d.value === docType)?.label || docType;
+        setReportData({ type: "expiry_by_type", alerts: data.alerts || [], summary: data, docType, docTypeLabel, dateFrom, dateTo });
+      } else if (reportType === "compliance" || reportType === "noncompliant") {
         const empUrl = employerId
-          ? `${API}/employees?employer_id=${employerId}&limit=500`
-          : `${API}/employees?limit=500`;
+          ? `${API}/employees/?employer_id=${employerId}&resigned=false&limit=500`
+          : `${API}/employees/?resigned=false&limit=500`;
         const [empRes, empListRes, siteRes] = await Promise.all([
           apiFetch(empUrl).then(r => r.json()),
-          apiFetch(`${API}/employers`).then(r => r.json()),
-          apiFetch(`${API}/sites`).then(r => r.json()),
+          apiFetch(`${API}/employers/`).then(r => r.json()),
+          apiFetch(`${API}/sites/`).then(r => r.json()),
         ]);
         const empMap  = Object.fromEntries(empListRes.map(e => [e.id, e.name]));
         const siteMap = Object.fromEntries(siteRes.map(s => [s.id, s.site_name]));
@@ -3101,10 +3621,10 @@ const ReportsTab = () => {
         const data = await apiFetch(url).then(r => r.json());
         setReportData({ type: "missing", alerts: data.alerts, total: data.total });
       } else if (reportType === "quota") {
-        const url = employerId ? `${API}/sites?employer_id=${employerId}` : `${API}/sites`;
+        const url = employerId ? `${API}/sites/?employer_id=${employerId}` : `${API}/sites/`;
         const [siteRes, empListRes] = await Promise.all([
           apiFetch(url).then(r => r.json()),
-          apiFetch(`${API}/employers`).then(r => r.json()),
+          apiFetch(`${API}/employers/`).then(r => r.json()),
         ]);
         const empMap = Object.fromEntries(empListRes.map(e => [e.id, e.name]));
         setReportData({ type: "quota", sites: siteRes.map(s => ({ ...s, employer_name: empMap[s.employer_id] || `Employer ${s.employer_id}` })) });
@@ -3123,7 +3643,7 @@ const ReportsTab = () => {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label style={lbl}>Report Type</label>
-            <select value={reportType} onChange={e => { setReportType(e.target.value); setReportData(null); }} style={{ ...sel, minWidth: 230 }}>
+            <select value={reportType} onChange={e => { setReportType(e.target.value); setReportData(null); }} style={{ ...sel, minWidth: 260 }}>
               {REPORT_TYPES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
@@ -3134,6 +3654,42 @@ const ReportsTab = () => {
               {(employers || []).map(e => <option key={e.id} value={String(e.id)}>{e.name}</option>)}
             </select>
           </div>
+
+          {/* ── Expiry by type controls ── */}
+          {reportType === "expiry_by_type" && (<>
+            <div>
+              <label style={lbl}>Document Type</label>
+              <select value={docType} onChange={e => { setDocType(e.target.value); setReportData(null); }} style={{ ...sel, minWidth: 180 }}>
+                {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>From Date</label>
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setReportData(null); }} style={{ ...sel }} />
+            </div>
+            <div>
+              <label style={lbl}>To Date</label>
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setReportData(null); }} style={{ ...sel }} />
+            </div>
+            <div>
+              <label style={lbl}>Quick Select</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[
+                  { label: "This Month",   offset: 0 },
+                  { label: "Next Month",   offset: 1 },
+                  { label: "In 2 Months",  offset: 2 },
+                  { label: "In 3 Months",  offset: 3 },
+                ].map(({ label, offset }) => (
+                  <button key={label} type="button" onClick={() => { setMonth(offset); setReportData(null); }} style={{
+                    background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`,
+                    padding: "8px 12px", borderRadius: 8, cursor: "pointer",
+                    fontFamily: C.sans, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap",
+                  }}>{label}</button>
+                ))}
+              </div>
+            </div>
+          </>)}
+
           {reportType === "expiry" && (
             <div>
               <label style={lbl}>Window</label>
@@ -3145,19 +3701,24 @@ const ReportsTab = () => {
               </select>
             </div>
           )}
+        </div>
+
+        {/* Action row */}
+        <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
           <button onClick={generate} disabled={loading} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 22px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}>
             {loading ? "Loading…" : "Generate Preview"}
           </button>
-          {reportData && (
-            <>
-              <button onClick={() => exportReportPDF(reportData, selectedEmployer?.name)} style={{ background: "#1e293b", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                ↓ Export PDF
-              </button>
-              <button onClick={() => exportReportExcel(reportData, selectedEmployer?.name)} style={{ background: "#166534", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                ↓ Export Excel
-              </button>
-            </>
-          )}
+          {reportData && (<>
+            <button onClick={() => exportReportPDF(reportData, selectedEmployer?.name)} style={{ background: "#1e293b", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              ↓ Export PDF
+            </button>
+            <button onClick={() => exportReportExcel(reportData, selectedEmployer?.name)} style={{ background: "#166534", color: "#fff", border: "none", padding: "9px 18px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              ↓ Export Excel
+            </button>
+            <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>
+              {reportData.alerts?.length ?? reportData.employees?.length ?? reportData.sites?.length ?? 0} records
+            </span>
+          </>)}
         </div>
         {err && <div style={{ marginTop: 12, color: C.accent, fontFamily: C.sans, fontSize: 13 }}>{err}</div>}
       </div>
@@ -3364,6 +3925,7 @@ export default function App() {
 
   return (
     <div style={{ background: C.pageBg, minHeight: "100vh", color: C.text, fontFamily: C.sans }}>
+      <GlobalStyles />
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
 
       {/* Header */}
@@ -3375,7 +3937,7 @@ export default function App() {
         padding: "0 32px",
         boxShadow: "0 1px 8px rgba(0,0,0,0.06)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 20, height: 62 }}>
+        <div className="dg-header" style={{ display: "flex", alignItems: "center", gap: 20, height: 62 }}>
           {/* Brand */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{
@@ -3464,13 +4026,15 @@ export default function App() {
       )}
 
       {/* Main content */}
-      <div style={{ padding: "28px 32px" }}>
+      <div className="dg-main" style={{ padding: "28px 32px" }}>
         <Tabs tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS", "REPORTS"]} active={tab} onChange={setTab} />
-        {tab === "OVERVIEW"  && <DashboardTab onNavigate={handleDashNav} />}
-        {tab === "ALERTS"    && <AlertsTab key={alertNavKey} initialView={alertNav.view} initialFilter={alertNav.filter} initialDays={alertNav.days} />}
-        {tab === "EMPLOYEES" && <EmployeesTab />}
-        {tab === "EMPLOYERS" && <EmployersTab />}
-        {tab === "REPORTS"   && <ReportsTab />}
+        <div key={tab} style={{ animation: "slideTab 0.18s ease" }}>
+          {tab === "OVERVIEW"  && <DashboardTab onNavigate={handleDashNav} />}
+          {tab === "ALERTS"    && <AlertsTab key={alertNavKey} initialView={alertNav.view} initialFilter={alertNav.filter} initialDays={alertNav.days} />}
+          {tab === "EMPLOYEES" && <EmployeesTab />}
+          {tab === "EMPLOYERS" && <EmployersTab />}
+          {tab === "REPORTS"   && <ReportsTab />}
+        </div>
       </div>
     </div>
   );

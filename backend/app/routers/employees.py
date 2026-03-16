@@ -95,6 +95,7 @@ async def create_employee(payload: EmployeeCreate, db: AsyncSession = Depends(ge
 async def list_employees(
     site_id: Optional[int] = None,
     employer_id: Optional[int] = None,
+    resigned: Optional[bool] = Query(None, description="Filter by resigned status; omit for all"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=500),
     db: AsyncSession = Depends(get_db),
@@ -105,6 +106,8 @@ async def list_employees(
         q = q.where(Employee.site_id == site_id)
     if employer_id:
         q = q.where(Employee.employer_id == employer_id)
+    if resigned is not None:
+        q = q.where(Employee.resigned == resigned)
     q = q.offset(skip).limit(limit)
     result = await db.execute(q)
     return [_enrich(e) for e in result.scalars().all()]

@@ -23,23 +23,32 @@ async def seed_demo_data():
         if count > 0:
             return  # Already seeded
 
+        # ── Employers ────────────────────────────────────────
         companies = [
-            ("Gulf Construction LLC", "CR-2024-001", "Ahmed Al-Rashid", "ahmed@gulfconstruction.ae"),
-            ("Horizon Engineering", "CR-2024-002", "Sarah Mitchell", "sarah@horizoneng.com"),
-            ("Al Noor Facilities", "CR-2024-003", "Mohammed Al-Farsi", "m.alfarsi@alnoor.ae"),
+            ("Gulf Construction LLC",  "CR-2024-001", "Ahmed Al-Rashid",   "ahmed@gulfconstruction.ae",  "+971-4-123-4567"),
+            ("Horizon Engineering",    "CR-2024-002", "Sarah Mitchell",     "sarah@horizoneng.com",       "+971-4-234-5678"),
+            ("Al Noor Facilities",     "CR-2024-003", "Mohammed Al-Farsi",  "m.alfarsi@alnoor.ae",        "+971-4-345-6789"),
+            ("Prime Steel Works",      "CR-2024-004", "Rajan Pillai",       "rajan@primesteelworks.ae",   "+971-4-456-7890"),
         ]
         employers_created = []
-        for name, reg, contact, email in companies:
-            e = Employer(name=name, registration_number=reg, contact_name=contact, contact_email=email, contact_phone="+971-4-000-0000")
+        for name, reg, contact, email, phone in companies:
+            e = Employer(name=name, registration_number=reg, contact_name=contact,
+                         contact_email=email, contact_phone=phone)
             db.add(e)
             employers_created.append(e)
         await db.flush()
 
+        # ── Sites ────────────────────────────────────────────
         site_defs = [
-            (employers_created[0].id, "Dubai Marina Site", 15),
-            (employers_created[0].id, "Abu Dhabi HQ", 10),
-            (employers_created[1].id, "Sharjah Industrial Zone", 20),
-            (employers_created[2].id, "Al Quoz Workshop", 8),
+            (employers_created[0].id, "Dubai Marina Site",      12),
+            (employers_created[0].id, "Abu Dhabi HQ",            8),
+            (employers_created[0].id, "Jebel Ali Depot",         6),
+            (employers_created[1].id, "Sharjah Industrial Zone", 15),
+            (employers_created[1].id, "Ajman Office",             5),
+            (employers_created[2].id, "Al Quoz Workshop",        10),
+            (employers_created[2].id, "Deira Branch",             7),
+            (employers_created[3].id, "Mussafah Steel Yard",     14),
+            (employers_created[3].id, "Dubai Investments Park",   9),
         ]
         sites_created = []
         for emp_id, sname, quota in site_defs:
@@ -48,26 +57,126 @@ async def seed_demo_data():
             sites_created.append(s)
         await db.flush()
 
+        # ── Reference data ───────────────────────────────────
         today = date.today()
-        nationalities = ["Indian", "Pakistani", "Filipino", "Bangladeshi", "Egyptian", "Nepalese"]
-        titles = ["Civil Engineer", "Site Supervisor", "Electrician", "Welder", "Foreman", "Technician", "Driver"]
 
-        emp_num = 1000
+        FIRST_NAMES = [
+            "Rahul", "Mohammed", "Suresh", "Ravi", "Anwar", "Jose", "Carlos", "Sanjay",
+            "Ali", "Pradeep", "Ramesh", "Vijay", "Arjun", "Hassan", "Omar", "Deepak",
+            "Tariq", "Nikhil", "Faisal", "Sherif", "Biju", "Manoj", "Salim", "Rajesh",
+            "Naresh", "Harish", "Ganesh", "Prakash", "Imran", "Khalid",
+        ]
+        LAST_NAMES = [
+            "Kumar", "Khan", "Sharma", "Patel", "Singh", "Ali", "Ahmed", "Nair",
+            "Reddy", "Rao", "Fernandez", "Santos", "Hussain", "Hassan", "Malik",
+            "Gupta", "Verma", "Joshi", "Pillai", "Menon", "Thomas", "George",
+            "Mathew", "Philip", "Joseph", "Ibrahim", "Saleh", "Qureshi", "Ansari", "Sheikh",
+        ]
+        NATIONALITIES = [
+            "Indian", "Pakistani", "Filipino", "Bangladeshi", "Egyptian",
+            "Nepalese", "Sri Lankan", "Indonesian", "Yemeni", "Ethiopian",
+        ]
+        TITLES = [
+            "Civil Engineer", "Site Supervisor", "Electrician", "Welder",
+            "Foreman", "Technician", "Driver", "Mason", "Carpenter",
+            "Plumber", "Steel Fixer", "Safety Officer", "Helper", "Crane Operator",
+        ]
+
+        slot_counter = 10000
+        emp_num      = 2000
+        passport_num = 50000
+        wp_num       = 30000
+
         for site in sites_created:
-            fill_count = site.total_quota_slots - random.randint(1, 3)
+            # ── Create quota slots for every slot in this site ──
+            slots_for_site = []
+            for slot_idx in range(site.total_quota_slots):
+                slot_counter += 1
+                # Some slots expire soon, some far away, a few already expired
+                slot_days = random.choice([
+                    random.randint(-30, -1),    # ~10% expired
+                    random.randint(1,  60),     # ~20% critical/warning
+                    random.randint(61, 365),    # ~40% valid
+                    random.randint(366, 730),   # ~30% long validity
+                ])
+                qs = QuotaSlot(
+                    site_id=site.id,
+                    slot_number=f"QS{slot_counter:08d}",
+                    expiry_date=today + timedelta(days=slot_days),
+                )
+                db.add(qs)
+                slots_for_site.append(qs)
+            await db.flush()
+
+            # ── Fill most slots with employees (leave 1-2 vacant) ──
+            vacant = random.randint(1, min(2, site.total_quota_slots))
+            fill_count = site.total_quota_slots - vacant
+            random.shuffle(slots_for_site)
+
             for i in range(fill_count):
-                emp_num += 1
+                emp_num     += 1
+                passport_num += 1
+                wp_num       += 1
+                slot = slots_for_site[i]
+
+                name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+                nat  = random.choice(NATIONALITIES)
+
+                # Spread expiry dates realistically:
+                # passport: mostly valid but a few expired/expiring
+                pp_days  = random.choice([
+                    random.randint(-20,  0),   # expired
+                    random.randint(1,   30),   # critical
+                    random.randint(31,  90),   # warning
+                    random.randint(91, 730),   # valid
+                    random.randint(91, 730),   # valid (weighted)
+                    random.randint(91, 730),   # valid (weighted)
+                ])
+                vs_days  = random.choice([
+                    random.randint(-10,  0),
+                    random.randint(1,   30),
+                    random.randint(31, 365),
+                    random.randint(31, 365),
+                ])
+                ins_days = random.choice([
+                    random.randint(-15,  0),
+                    random.randint(1,   60),
+                    random.randint(61, 365),
+                    random.randint(61, 365),
+                ])
+                wpf_days = random.choice([
+                    random.randint(-5,   0),
+                    random.randint(1,   20),
+                    random.randint(21, 180),
+                    random.randint(21, 180),
+                ])
+                med_days = random.choice([
+                    random.randint(-30,  0),
+                    random.randint(1,   60),
+                    random.randint(61, 365),
+                    random.randint(61, 365),
+                    random.randint(61, 365),
+                ])
+
+                # ~8% of employees are resigned
+                is_resigned = random.random() < 0.08
+
                 emp = Employee(
                     employer_id=site.employer_id,
                     site_id=site.id,
-                    full_name=f"Employee {emp_num}",
+                    quota_slot_id=slot.id,
+                    full_name=name,
                     employee_number=f"EMP-{emp_num}",
-                    nationality=random.choice(nationalities),
-                    job_title=random.choice(titles),
-                    passport_expiry=today + timedelta(days=random.randint(-10, 400)),
-                    visa_stamp_expiry=today + timedelta(days=random.randint(5, 300)),
-                    insurance_expiry=today + timedelta(days=random.randint(-5, 200)),
-                    work_permit_fee_expiry=today + timedelta(days=random.randint(10, 365)),
+                    passport_number=f"P{passport_num:07d}",
+                    work_permit_number=f"WP-{today.year}-{wp_num:05d}",
+                    nationality=nat,
+                    job_title=random.choice(TITLES),
+                    passport_expiry=today + timedelta(days=pp_days),
+                    visa_stamp_expiry=today + timedelta(days=vs_days),
+                    insurance_expiry=today + timedelta(days=ins_days),
+                    work_permit_fee_expiry=today + timedelta(days=wpf_days),
+                    medical_expiry=today + timedelta(days=med_days),
+                    resigned=is_resigned,
                 )
                 db.add(emp)
 

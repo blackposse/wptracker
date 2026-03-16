@@ -12,6 +12,10 @@ from app.auth import get_current_user
 
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
 
+# doc_type slug → (field_name, label, critical_days, warning_days)
+_DOC_TYPE_MAP = {f[0].replace("_expiry", ""): f for f in EXPIRY_FIELDS}
+# e.g. "passport" → ("passport_expiry", "Passport", 30, 90)
+
 
 @router.get("/expiring", response_model=AlertsResponse)
 async def get_expiring_alerts(
@@ -28,6 +32,7 @@ async def get_expiring_alerts(
         .join(Site, Employee.site_id == Site.id)
         .join(Employer, Employee.employer_id == Employer.id)
         .where(Employer.is_active == True)
+        .where(Employee.resigned == False)
     )
 
     if employer_id is not None:
@@ -80,6 +85,82 @@ async def get_expiring_alerts(
     )
 
 
+@router.get("/expiry-by-type", response_model=AlertsResponse)
+async def get_expiry_by_type(
+    employer_id: Optional[int] = Query(None),
+    doc_type: str = Query("all", description="all|passport|visa_stamp|insurance|work_permit_fee|medical"),
+    date_from: Optional[date] = Query(None, description="YYYY-MM-DD"),
+    date_to: Optional[date] = Query(None, description="YYYY-MM-DD"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return expiry alerts filtered by document type and explicit date range."""
+    today = date.today()
+    d_from = date_from or today
+    d_to   = date_to   or (today + timedelta(days=365))
+
+    # Determine which fields to include
+    if doc_type == "all":
+        fields = list(EXPIRY_FIELDS)
+    elif doc_type in _DOC_TYPE_MAP:
+        fields = [_DOC_TYPE_MAP[doc_type]]
+    else:
+        fields = list(EXPIRY_FIELDS)
+
+    # Build OR conditions so we only fetch employees that match at least one field
+    conditions = [
+        and_(
+            getattr(Employee, field_name).isnot(None),
+            getattr(Employee, field_name) >= d_from,
+            getattr(Employee, field_name) <= d_to,
+        )
+        for field_name, *_ in fields
+    ]
+
+    q = (
+        select(Employee, Site, Employer)
+        .join(Site, Employee.site_id == Site.id)
+        .join(Employer, Employee.employer_id == Employer.id)
+        .where(Employer.is_active == True)
+        .where(Employee.resigned == False)
+        .where(or_(*conditions))
+    )
+    if employer_id is not None:
+        q = q.where(Employee.employer_id == employer_id)
+
+    rows = (await db.execute(q)).all()
+
+    alerts: list[ExpiryAlert] = []
+    for emp, site, employer in rows:
+        for field_name, label, critical_days, warning_days in fields:
+            expiry_date = getattr(emp, field_name)
+            if expiry_date is None or not (d_from <= expiry_date <= d_to):
+                continue
+            detail = calculate_expiry_status(expiry_date, critical_days=critical_days, warning_days=warning_days)
+            if detail:
+                alerts.append(ExpiryAlert(
+                    employee_id=emp.id,
+                    employee_number=emp.employee_number,
+                    full_name=emp.full_name,
+                    employer_name=employer.name,
+                    site_name=site.site_name,
+                    expiry_type=label,
+                    expiry_date=expiry_date,
+                    days_remaining=detail.days_remaining,
+                    status=detail.status,
+                ))
+
+    alerts.sort(key=lambda a: a.expiry_date)
+
+    return AlertsResponse(
+        total=len(alerts),
+        critical=sum(1 for a in alerts if a.status == ExpiryStatus.CRITICAL),
+        warning=sum(1 for a in alerts if a.status == ExpiryStatus.WARNING),
+        expired=sum(1 for a in alerts if a.status == ExpiryStatus.EXPIRED),
+        alerts=alerts,
+    )
+
+
 # Field name → display label mapping for missing-doc alerts
 _MISSING_FIELDS = [
     ("passport_expiry",        "Passport"),
@@ -102,6 +183,7 @@ async def get_missing_alerts(
         .join(Site, Employee.site_id == Site.id)
         .join(Employer, Employee.employer_id == Employer.id)
         .where(Employer.is_active == True)
+        .where(Employee.resigned == False)
         .where(
             or_(
                 Employee.passport_expiry.is_(None),

@@ -20,14 +20,14 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
         select(func.count()).select_from(Site).join(Employer, Site.employer_id == Employer.id).where(Employer.is_active == True)
     )).scalar()
     total_employees = (await db.execute(
-        select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True)
+        select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True).where(Employee.resigned == False)
     )).scalar()
 
     critical_threshold = today + timedelta(days=30)
     warning_threshold = today + timedelta(days=90)
 
     def active_employee_base():
-        return select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True)
+        return select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True).where(Employee.resigned == False)
 
     def any_expiry_in(threshold):
         return or_(
@@ -67,7 +67,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
     sites_at_capacity = 0
     for site in sites:
         used = (await db.execute(
-            select(func.count()).where(Employee.site_id == site.id)
+            select(func.count()).where(Employee.site_id == site.id).where(Employee.resigned == False)
         )).scalar()
         if used >= site.total_quota_slots:
             sites_at_capacity += 1
