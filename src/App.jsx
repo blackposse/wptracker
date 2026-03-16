@@ -720,7 +720,7 @@ const QuotaSlotsPanel = ({ site, onClose }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [addData, setAddData] = useState({ slot_number: "", expiry_date: "" });
   const [editingId, setEditingId] = useState(null);
-  const [editExpiry, setEditExpiry] = useState("");
+  const [editForm, setEditForm] = useState({ slot_number: "", expiry_date: "" });
 
   const fetchSlots = () => {
     apiFetch(`${API}/quota-slots/?site_id=${site.id}`)
@@ -747,13 +747,14 @@ const QuotaSlotsPanel = ({ site, onClose }) => {
     finally { setSaving(false); }
   };
 
-  const handleUpdateExpiry = async (slotId) => {
+  const handleUpdate = async (slotId) => {
+    if (!editForm.slot_number.trim()) { setError("Slot number is required"); return; }
     setError(null); setSaving(true);
     try {
       const res = await apiFetch(`${API}/quota-slots/${slotId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expiry_date: editExpiry || null }),
+        body: JSON.stringify({ slot_number: editForm.slot_number.trim(), expiry_date: editForm.expiry_date || null }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.detail?.message || data.detail || "Error updating slot"); }
@@ -837,9 +838,9 @@ const QuotaSlotsPanel = ({ site, onClose }) => {
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                     <button
-                      onClick={() => { setEditingId(slot.id); setEditExpiry(slot.expiry_date || ""); setError(null); }}
+                      onClick={() => { setEditingId(slot.id); setEditForm({ slot_number: slot.slot_number, expiry_date: slot.expiry_date || "" }); setError(null); }}
                       style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "4px 12px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, fontWeight: 600 }}>
-                      Update Expiry
+                      Edit
                     </button>
                     {!slot.assigned_employee_id && (
                       <button
@@ -851,14 +852,24 @@ const QuotaSlotsPanel = ({ site, onClose }) => {
                   </div>
                 </div>
                 {editingId === slot.id && (
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)}
-                      style={{ ...inputStyle(false), width: "auto", flex: "0 0 160px" }} />
-                    <button onClick={() => handleUpdateExpiry(slot.id)} disabled={saving}
-                      style={{ background: C.accent, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 7, cursor: saving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
-                      {saving ? "Saving..." : "Save"}
-                    </button>
-                    <button onClick={() => setEditingId(null)} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+                  <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+                    <div>
+                      <label style={labelStyle}>Slot Number *</label>
+                      <input value={editForm.slot_number} onChange={e => setEditForm(f => ({ ...f, slot_number: e.target.value }))}
+                        style={inputStyle(false)} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Expiry Date</label>
+                      <input type="date" value={editForm.expiry_date} onChange={e => setEditForm(f => ({ ...f, expiry_date: e.target.value }))}
+                        style={inputStyle(false)} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                      <button onClick={() => setEditingId(null)} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Cancel</button>
+                      <button onClick={() => handleUpdate(slot.id)} disabled={saving}
+                        style={{ background: C.accent, color: "#fff", border: "none", padding: "7px 16px", borderRadius: 7, cursor: saving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+                        {saving ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2040,13 +2051,14 @@ const EmployersTab = () => {
 // ── CSV Import Modal ──────────────────────────────────────
 const CSV_UPDATE_TEMPLATE = [
   "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
+  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15",
+  "EMP-101,,,,,,,,2026-07-20,2026-10-01,2026-04-20",
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
   "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2027-06-01,2027-06-01,2026-12-01,2026-09-01,2026-03-01",
-  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2028-03-15,2028-03-15,2027-06-01,2027-09-01,2027-03-15",
+  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15",
+  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-03-20,2027-06-10,2027-03-20,2027-03-20",
 ].join("\n");
 
 const CsvImportModal = ({ onClose, onDone }) => {
@@ -2099,16 +2111,16 @@ const CsvImportModal = ({ onClose, onDone }) => {
 
   const UPDATE_FIELDS = [
     { col: "employee_number",        note: "REQUIRED — existing system ID (e.g. EMP-100). Used to find the employee.", required: true },
-    { col: "passport_number",        note: "Passport document number — checked for duplicates" },
-    { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123)" },
-    { col: "full_name",              note: "Employee's full name" },
-    { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
-    { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
-    { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
-    { col: "visa_stamp_expiry",      note: "Date format: YYYY-MM-DD" },
-    { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
-    { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
-    { col: "medical_expiry",         note: "Date format: YYYY-MM-DD — renewed yearly" },
+    { col: "full_name",              note: "Employee's full name — leave blank to keep current value" },
+    { col: "passport_number",        note: "Passport document number — checked for duplicates; leave blank to keep" },
+    { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123); leave blank to keep" },
+    { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino — leave blank to keep current" },
+    { col: "job_title",              note: "e.g. Site Supervisor, Electrician — leave blank to keep current" },
+    { col: "passport_expiry",        note: "YYYY-MM-DD — leave blank to keep current date" },
+    { col: "visa_stamp_expiry",      note: "YYYY-MM-DD — leave blank to keep current date" },
+    { col: "insurance_expiry",       note: "YYYY-MM-DD — leave blank to keep current date" },
+    { col: "work_permit_fee_expiry", note: "YYYY-MM-DD — leave blank to keep current date" },
+    { col: "medical_expiry",         note: "YYYY-MM-DD — leave blank to keep current date" },
   ];
 
   const fields = mode === "create" ? CREATE_FIELDS : UPDATE_FIELDS;
