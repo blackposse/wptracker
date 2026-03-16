@@ -42,16 +42,15 @@ const C = {
 
 const STATUS_CONFIG = {
   Valid:    { color: "#16a34a", bg: "#f0fdf4", label: "VALID",    icon: "✓" },
-  Warning:  { color: "#d97706", bg: "#fffbeb", label: "WARNING",  icon: "⚠" },
-  Critical: { color: "#dc2626", bg: "#fef2f2", label: "EXPIRING", icon: "!" },
+  Warning:  { color: "#ca8a04", bg: "#fefce8", label: "WARNING",  icon: "⚠" },
+  Critical: { color: "#f97316", bg: "#fff7ed", label: "EXPIRING", icon: "!" },
   Expired:  { color: "#b91c1c", bg: "#fff1f2", label: "EXPIRED",  icon: "✗" },
 };
 
 function daysColor(days) {
-  if (days < 0)  return "#6b7280";
-  if (days < 15) return "#dc2626";
-  if (days < 30) return "#ea580c";
-  if (days < 60) return "#d97706";
+  if (days < 0)  return "#b91c1c";
+  if (days < 30) return "#f97316";
+  if (days < 90) return "#ca8a04";
   return "#16a34a";
 }
 
@@ -1184,9 +1183,9 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
           </span>
         ) : (
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {expired > 0  && <span style={{ background: "#fff1f2", color: "#b91c1c", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{expired} expired</span>}
-            {critical > 0 && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{critical} expiring</span>}
-            {warning > 0  && <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{warning} warning</span>}
+            {expired > 0  && <span style={{ background: "#fff1f2", color: "#b91c1c", border: "1px solid #fecaca",  padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{expired} expired</span>}
+            {critical > 0 && <span style={{ background: "#fff7ed", color: "#f97316", border: "1px solid #fed7aa",  padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{critical} expiring</span>}
+            {warning > 0  && <span style={{ background: "#fefce8", color: "#ca8a04", border: "1px solid #fde68a",  padding: "2px 9px", borderRadius: 20, fontSize: 11, fontFamily: C.sans, fontWeight: 700 }}>{warning} warning</span>}
           </div>
         )}
         <span style={{ color: C.textMuted, fontSize: 12, marginLeft: 4, transition: "transform 0.2s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
@@ -1329,8 +1328,8 @@ const DashboardTab = ({ onNavigate }) => {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     {exp > 0  && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#b91c1c", fontFamily: C.sans, fontSize: 12 }}>Expired</span><span style={{ background: "#fff1f2", color: "#b91c1c", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{exp}</span></div>}
-                    {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 12 }}>Expiring</span><span style={{ background: "#fef2f2", color: "#dc2626", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{crit}</span></div>}
-                    {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#d97706", fontFamily: C.sans, fontSize: 12 }}>Warning</span><span style={{ background: "#fffbeb", color: "#d97706", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{warn}</span></div>}
+                    {crit > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#f97316", fontFamily: C.sans, fontSize: 12 }}>Expiring</span><span style={{ background: "#fff7ed", color: "#f97316", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{crit}</span></div>}
+                    {warn > 0 && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#ca8a04", fontFamily: C.sans, fontSize: 12 }}>Warning</span><span style={{ background: "#fefce8", color: "#ca8a04", fontFamily: C.mono, fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 6 }}>{warn}</span></div>}
                   </div>
                 )}
               </div>
@@ -1930,8 +1929,8 @@ const EmployeesTab = () => {
         {/* Status summary pills */}
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {summaryExpired  > 0 && <span onClick={() => setFilterStatus("Expired")}  style={{ background: "#fff1f2", color: "#b91c1c", border: "1px solid #fecaca", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryExpired} Expired</span>}
-          {summaryCritical > 0 && <span onClick={() => setFilterStatus("Critical")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryCritical} Expiring</span>}
-          {summaryWarning  > 0 && <span onClick={() => setFilterStatus("Warning")}  style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryWarning} Warning</span>}
+          {summaryCritical > 0 && <span onClick={() => setFilterStatus("Critical")} style={{ background: "#fff7ed", color: "#f97316", border: "1px solid #fed7aa", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryCritical} Expiring</span>}
+          {summaryWarning  > 0 && <span onClick={() => setFilterStatus("Warning")}  style={{ background: "#fefce8", color: "#ca8a04", border: "1px solid #fde68a", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryWarning} Warning</span>}
           {summaryValid    > 0 && <span onClick={() => setFilterStatus("Valid")}    style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontFamily: C.sans, fontWeight: 700, cursor: "pointer" }}>{summaryValid} Valid</span>}
           <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12 }}>{allFiltered.length} employee{allFiltered.length !== 1 ? "s" : ""}</span>
         </div>
@@ -2940,8 +2939,8 @@ function calcComplianceScore(employees) {
 
 function pdfStatusStyle(status) {
   if (status === "Valid")    return { fillColor: [240,253,244], textColor: [22,163,74],   fontStyle: "bold" };
-  if (status === "Warning")  return { fillColor: [255,251,235], textColor: [217,119,6],   fontStyle: "bold" };
-  if (status === "Critical") return { fillColor: [254,242,242], textColor: [220,38,38],   fontStyle: "bold" };
+  if (status === "Warning")  return { fillColor: [254,252,232], textColor: [202,138,4],   fontStyle: "bold" };
+  if (status === "Critical") return { fillColor: [255,247,237], textColor: [249,115,22],  fontStyle: "bold" };
   if (status === "Expired")  return { fillColor: [254,242,242], textColor: [185,28,28],   fontStyle: "bold" };
   return { fillColor: [248,250,252], textColor: [148,163,184] };
 }
@@ -2977,8 +2976,8 @@ function exportCompliancePDF(employees, employerName) {
     { label: "EMPLOYEES",        value: String(employees.length), color: [15,23,42] },
     { label: "COMPLIANCE SCORE", value: `${score}%`,              color: score >= 80 ? [22,163,74] : score >= 60 ? [217,119,6] : [220,38,38] },
     { label: "EXPIRED",          value: String(expired),          color: expired  > 0 ? [185,28,28]   : [22,163,74] },
-    { label: "CRITICAL",         value: String(critical),         color: critical > 0 ? [220,38,38]   : [22,163,74] },
-    { label: "WARNING",          value: String(warning),          color: warning  > 0 ? [217,119,6]   : [22,163,74] },
+    { label: "CRITICAL",         value: String(critical),         color: critical > 0 ? [249,115,22]  : [22,163,74] },
+    { label: "WARNING",          value: String(warning),          color: warning  > 0 ? [202,138,4]   : [22,163,74] },
   ];
   let sx = 14;
   for (const { label, value, color } of sumItems) {
@@ -3290,8 +3289,8 @@ const ReportPreview = ({ data }) => {
             { label: "Employees",        value: employees.length, color: C.text },
             { label: "Compliance Score", value: `${score}%`,      color: score >= 80 ? "#16a34a" : score >= 60 ? "#d97706" : "#dc2626" },
             { label: "Expired",          value: expired,           color: expired  > 0 ? "#b91c1c" : "#16a34a" },
-            { label: "Critical",         value: critical,          color: critical > 0 ? "#dc2626" : "#16a34a" },
-            { label: "Warning",          value: warning,           color: warning  > 0 ? "#d97706" : "#16a34a" },
+            { label: "Critical",         value: critical,          color: critical > 0 ? "#f97316" : "#16a34a" },
+            { label: "Warning",          value: warning,           color: warning  > 0 ? "#ca8a04" : "#16a34a" },
           ].map((s, i) => (
             <div key={i} style={{ flex: 1, padding: "16px 20px", borderRight: `1px solid ${C.border}` }}>
               <div style={{ fontFamily: C.sans, fontSize: 22, fontWeight: 700, color: s.color }}>{s.value}</div>
@@ -3429,8 +3428,8 @@ const ReportPreview = ({ data }) => {
           {[
             { label: "Total",    value: alerts.length, color: C.text },
             { label: "Expired",  value: expired,       color: expired  > 0 ? "#b91c1c" : "#16a34a" },
-            { label: "Critical", value: critical,       color: critical > 0 ? "#dc2626" : "#16a34a" },
-            { label: "Warning",  value: warning,        color: warning  > 0 ? "#d97706" : "#16a34a" },
+            { label: "Critical", value: critical,       color: critical > 0 ? "#f97316" : "#16a34a" },
+            { label: "Warning",  value: warning,        color: warning  > 0 ? "#ca8a04" : "#16a34a" },
             { label: "Valid",    value: valid,           color: valid    > 0 ? "#16a34a" : C.textMuted },
           ].map((s, i) => (
             <div key={i} style={{ flex: 1, padding: "14px 20px", borderRight: `1px solid ${C.border}` }}>
