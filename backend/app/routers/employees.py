@@ -257,9 +257,14 @@ async def bulk_update_employees(
     current_user: User = Depends(get_current_user),
 ):
     content = await file.read()
-    try:
-        text = content.decode("utf-8-sig")  # handles BOM from Excel
-    except UnicodeDecodeError:
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            text = content.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
 
     reader = csv.DictReader(io.StringIO(text))
@@ -359,9 +364,14 @@ async def bulk_create_employees(
     current_user: User = Depends(get_current_user),
 ):
     content = await file.read()
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            text = content.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
 
     reader = csv.DictReader(io.StringIO(text))
