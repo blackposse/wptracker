@@ -2109,9 +2109,9 @@ const CSV_UPDATE_TEMPLATE = [
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
-  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry",
-  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15",
-  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-03-20,2027-06-10,2027-03-20,2027-03-20",
+  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
+  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
+  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-03-20,2027-06-10,2027-03-20,2027-03-20,,",
 ].join("\n");
 
 const CsvImportModal = ({ onClose, onDone }) => {
@@ -2160,6 +2160,8 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
     { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
     { col: "medical_expiry",         note: "Date format: YYYY-MM-DD — renewed yearly" },
+    { col: "quota_slot_number",      note: "e.g. QS00301620 — assigns employee to this slot (must belong to the same site); leave blank for none" },
+    { col: "quota_slot_expiry",      note: "YYYY-MM-DD — sets the expiry of the assigned quota slot; only used when quota_slot_number is provided" },
   ];
 
   const UPDATE_FIELDS = [

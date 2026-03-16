@@ -433,6 +433,26 @@ async def bulk_create_employees(
             except ValueError:
                 return None
 
+        # Resolve optional quota slot
+        quota_slot_id = None
+        slot_number_raw = (row.get("quota_slot_number") or "").strip()
+        slot_expiry_raw = (row.get("quota_slot_expiry") or "").strip()
+        if slot_number_raw:
+            slot = (await db.execute(
+                select(QuotaSlot).where(QuotaSlot.slot_number == slot_number_raw)
+            )).scalar_one_or_none()
+            if not slot:
+                errors.append(f"Row {i} ({full_name}): quota slot '{slot_number_raw}' not found")
+                skipped += 1
+                continue
+            if slot.site_id != site.id:
+                errors.append(f"Row {i} ({full_name}): quota slot '{slot_number_raw}' does not belong to site '{site_name}'")
+                skipped += 1
+                continue
+            quota_slot_id = slot.id
+            if slot_expiry_raw:
+                slot.expiry_date = parse_date(slot_expiry_raw)
+
         emp = Employee(
             employer_id=employer.id,
             site_id=site.id,
@@ -447,6 +467,7 @@ async def bulk_create_employees(
             insurance_expiry=parse_date(row.get("insurance_expiry")),
             work_permit_fee_expiry=parse_date(row.get("work_permit_fee_expiry")),
             medical_expiry=parse_date(row.get("medical_expiry")),
+            quota_slot_id=quota_slot_id,
         )
         db.add(emp)
         try:
