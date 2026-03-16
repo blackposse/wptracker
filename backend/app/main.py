@@ -10,7 +10,7 @@ import os
 
 from app.database import init_db, engine, AsyncSessionLocal
 from app.models.models import Employer, Site, Employee, AuditLog, User
-from app.routers import employees, employers, sites, alerts, dashboard
+from app.routers import employees, employers, sites, alerts, dashboard, admin
 from app.routers import auth as auth_router
 from app.auth import hash_password
 from sqlalchemy import select, func, text
@@ -147,7 +147,6 @@ async def run_migrations():
 async def lifespan(app: FastAPI):
     await init_db()
     await run_migrations()
-    await seed_demo_data()
     await seed_admin_user()
     yield
 
@@ -215,6 +214,7 @@ app.include_router(sites.router)
 app.include_router(employees.router)
 app.include_router(alerts.router)
 app.include_router(dashboard.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

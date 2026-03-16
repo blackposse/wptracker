@@ -2841,11 +2841,174 @@ const ReportsTab = () => {
   );
 };
 
+// ── Settings Tab ──────────────────────────────────────────
+const SettingsTab = () => {
+  const { data: stats, refetch: refetchStats } = useFetch(`${API}/admin/stats`);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [message, setMessage]         = useState(null); // { type: "success"|"error", text }
+
+  const showMsg = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleWipe = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`${API}/admin/wipe`, { method: "POST" });
+      if (res.ok) { showMsg("success", "All data wiped successfully."); refetchStats(); }
+      else { const d = await res.json(); showMsg("error", d.detail || "Wipe failed."); }
+    } catch (e) { showMsg("error", e.message); }
+    setLoading(false);
+    setConfirmWipe(false);
+  };
+
+  const handleSeed = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`${API}/admin/seed`, { method: "POST" });
+      if (res.ok) { showMsg("success", "Demo data loaded successfully."); refetchStats(); }
+      else { const d = await res.json(); showMsg("error", d.detail || "Seed failed."); }
+    } catch (e) { showMsg("error", e.message); }
+    setLoading(false);
+  };
+
+  const statItems = [
+    { label: "Employers",   value: stats?.employers,  accent: "#3b82f6" },
+    { label: "Sites",       value: stats?.sites,       accent: "#a855f7" },
+    { label: "Employees",   value: stats?.employees,   accent: C.accent  },
+    { label: "Audit Logs",  value: stats?.audit_logs,  accent: "#d97706" },
+    { label: "Users",       value: stats?.users,       accent: "#0891b2" },
+  ];
+
+  return (
+    <div>
+
+      {/* Flash message */}
+      {message && (
+        <div style={{
+          background: message.type === "success" ? "#f0fdf4" : "#fef2f2",
+          border: `1px solid ${message.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+          color: message.type === "success" ? "#16a34a" : "#dc2626",
+          padding: "12px 16px", borderRadius: 10, fontFamily: C.sans, fontSize: 13,
+          marginBottom: 24, fontWeight: 500,
+        }}>
+          {message.type === "success" ? "✓" : "⚠"} {message.text}
+        </div>
+      )}
+
+      {/* Data overview */}
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 700 }}>Database Overview</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 2 }}>Current record counts across all tables</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 0 }}>
+          {statItems.map(({ label, value, accent }, i) => (
+            <div key={label} style={{
+              padding: "20px 22px",
+              borderRight: i < statItems.length - 1 ? `1px solid ${C.border}` : "none",
+              borderTop: `3px solid ${accent}`,
+            }}>
+              <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: C.sans, marginBottom: 8 }}>{label}</div>
+              <div style={{ color: C.text, fontSize: 30, fontWeight: 800, fontFamily: C.mono, lineHeight: 1 }}>{value ?? "—"}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Data Management */}
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 700 }}>Data Management</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 2 }}>Load demo data for testing or wipe everything to start fresh</div>
+        </div>
+        <div style={{ padding: "22px" }}>
+
+          {/* Load demo data */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 12 }}>
+            <div>
+              <div style={{ color: C.text, fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Load Demo Data</div>
+              <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 3 }}>Populate the database with sample employers, sites and employees for testing</div>
+            </div>
+            <button
+              onClick={handleSeed}
+              disabled={loading}
+              style={{
+                background: "#f0fdf4", color: "#16a34a",
+                border: "1px solid #bbf7d0",
+                padding: "8px 20px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
+                fontFamily: C.sans, fontSize: 13, fontWeight: 600,
+                opacity: loading ? 0.6 : 1, flexShrink: 0, marginLeft: 20,
+              }}
+            >
+              {loading ? "Working..." : "Load Demo Data"}
+            </button>
+          </div>
+
+          {/* Wipe data */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10 }}>
+            <div>
+              <div style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Wipe All Data</div>
+              <div style={{ color: "#ef4444", fontFamily: C.sans, fontSize: 12, marginTop: 3, opacity: 0.8 }}>Permanently deletes all employers, sites, employees and audit logs. Users are kept.</div>
+            </div>
+            <div style={{ flexShrink: 0, marginLeft: 20 }}>
+              {!confirmWipe ? (
+                <button
+                  onClick={() => setConfirmWipe(true)}
+                  disabled={loading}
+                  style={{
+                    background: "#fee2e2", color: "#dc2626",
+                    border: "1px solid #fca5a5",
+                    padding: "8px 20px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
+                    fontFamily: C.sans, fontSize: 13, fontWeight: 600,
+                    opacity: loading ? 0.6 : 1,
+                  }}
+                >
+                  Wipe All Data
+                </button>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>Are you sure?</span>
+                  <button
+                    onClick={handleWipe}
+                    disabled={loading}
+                    style={{
+                      background: "#dc2626", color: "#fff", border: "none",
+                      padding: "8px 16px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
+                      fontFamily: C.sans, fontSize: 13, fontWeight: 700,
+                      opacity: loading ? 0.6 : 1,
+                    }}
+                  >
+                    {loading ? "Wiping..." : "Yes, wipe everything"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmWipe(false)}
+                    style={{
+                      background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`,
+                      padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+                      fontFamily: C.sans, fontSize: 13,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Root App ──────────────────────────────────────────────
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken());
   const [currentUser, setCurrentUser] = useState(null);
   const [showUsers, setShowUsers] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Register the global unauth handler
   _onUnauth = () => { clearToken(); setAuthed(false); setCurrentUser(null); };
@@ -2930,17 +3093,30 @@ export default function App() {
             <span style={{ color: C.textMuted, fontSize: 12, fontFamily: C.mono }}>{currentUser.username}</span>
           )}
           {currentUser?.is_admin && (
-            <button
-              onClick={() => setShowUsers(true)}
-              style={{
-                background: "none", color: C.textSub,
-                border: `1px solid ${C.border}`,
-                padding: "5px 14px", borderRadius: 8, cursor: "pointer",
-                fontFamily: C.sans, fontSize: 12, fontWeight: 500,
-              }}
-            >
-              Users
-            </button>
+            <>
+              <button
+                onClick={() => setShowUsers(true)}
+                style={{
+                  background: "none", color: C.textSub,
+                  border: `1px solid ${C.border}`,
+                  padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+                  fontFamily: C.sans, fontSize: 12, fontWeight: 500,
+                }}
+              >
+                Users
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                style={{
+                  background: "none", color: C.textSub,
+                  border: `1px solid ${C.border}`,
+                  padding: "5px 14px", borderRadius: 8, cursor: "pointer",
+                  fontFamily: C.sans, fontSize: 12, fontWeight: 500,
+                }}
+              >
+                Settings
+              </button>
+            </>
           )}
           <button
             onClick={() => { clearToken(); setAuthed(false); setCurrentUser(null); }}
@@ -2955,7 +3131,12 @@ export default function App() {
           </button>
         </div>
       </div>
-      {showUsers && <UsersModal onClose={() => setShowUsers(false)} currentUserId={currentUser?.id} />}
+      {showUsers    && <UsersModal onClose={() => setShowUsers(false)} currentUserId={currentUser?.id} />}
+      {showSettings && (
+        <Modal wide title="Settings" onClose={() => setShowSettings(false)}>
+          <SettingsTab />
+        </Modal>
+      )}
 
       {/* Main content */}
       <div style={{ padding: "28px 32px" }}>
