@@ -18,6 +18,17 @@ services:
       retries: 10
       start_period: 10s
 
+  # ── Frontend (nginx + built React) ──────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
   # ── FastAPI Backend ──────────────────────────────────────────────
   api:
     build:
