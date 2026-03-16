@@ -27,6 +27,7 @@ async def get_expiring_alerts(
         select(Employee, Site, Employer)
         .join(Site, Employee.site_id == Site.id)
         .join(Employer, Employee.employer_id == Employer.id)
+        .where(Employer.is_active == True)
     )
 
     if employer_id is not None:
@@ -100,6 +101,7 @@ async def get_missing_alerts(
         select(Employee, Site, Employer)
         .join(Site, Employee.site_id == Site.id)
         .join(Employer, Employee.employer_id == Employer.id)
+        .where(Employer.is_active == True)
         .where(
             or_(
                 Employee.passport_expiry.is_(None),

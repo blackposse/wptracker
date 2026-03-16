@@ -123,19 +123,32 @@ const Badge = ({ status }) => {
 };
 
 // ── Stat Card ─────────────────────────────────────────────
-const StatCard = ({ label, value, sub, accent, glow }) => (
-  <div style={{
-    background: C.cardBg,
-    border: `1px solid ${C.border}`,
-    borderRadius: 14,
-    padding: "22px 24px 18px",
-    flex: 1, minWidth: 150,
-    position: "relative", overflow: "hidden",
-    boxShadow: glow && value > 0
-      ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
-      : "0 1px 4px rgba(0,0,0,0.04)",
-    transition: "box-shadow 0.2s",
-  }}>
+const StatCard = ({ label, value, sub, accent, glow, onClick }) => (
+  <div
+    onClick={onClick}
+    onMouseEnter={onClick ? e => {
+      e.currentTarget.style.transform = "translateY(-2px)";
+      e.currentTarget.style.boxShadow = `0 8px 24px ${accent}28, 0 2px 8px rgba(0,0,0,0.08)`;
+      e.currentTarget.style.borderColor = accent || C.border;
+    } : undefined}
+    onMouseLeave={onClick ? e => {
+      e.currentTarget.style.transform = "";
+      e.currentTarget.style.boxShadow = glow && value > 0 ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)` : "0 1px 4px rgba(0,0,0,0.04)";
+      e.currentTarget.style.borderColor = C.border;
+    } : undefined}
+    style={{
+      background: C.cardBg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 14,
+      padding: "22px 24px 18px",
+      flex: 1, minWidth: 150,
+      position: "relative", overflow: "hidden",
+      boxShadow: glow && value > 0
+        ? `0 4px 20px ${accent}18, 0 1px 4px rgba(0,0,0,0.04)`
+        : "0 1px 4px rgba(0,0,0,0.04)",
+      transition: "box-shadow 0.2s, transform 0.15s, border-color 0.15s",
+      cursor: onClick ? "pointer" : "default",
+    }}>
     <div style={{
       position: "absolute", top: 0, left: 0, right: 0, height: 3,
       background: `linear-gradient(90deg, ${accent || C.border}, ${accent ? accent + "50" : C.border})`,
@@ -143,6 +156,7 @@ const StatCard = ({ label, value, sub, accent, glow }) => (
     <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.sans }}>{label}</div>
     <div style={{ color: glow && value > 0 ? accent : C.text, fontSize: 38, fontWeight: 800, lineHeight: 1, fontFamily: C.mono }}>{value ?? "—"}</div>
     {sub && <div style={{ color: C.textMuted, fontSize: 12, marginTop: 8, fontFamily: C.sans }}>{sub}</div>}
+    {onClick && <div style={{ color: accent || C.textMuted, fontSize: 11, marginTop: 6, fontFamily: C.sans, opacity: 0.7 }}>Click to view →</div>}
   </div>
 );
 
@@ -817,7 +831,7 @@ const CategorySection = ({ title, alerts, onEmployeeClick }) => {
 };
 
 // ── Dashboard Overview ────────────────────────────────────
-const DashboardTab = () => {
+const DashboardTab = ({ onNavigate }) => {
   const { data: stats } = useFetch(`${API}/dashboard/stats`);
   const { data: alertData } = useFetch(`${API}/alerts/expiring?days=90`);
   const { data: sites }     = useFetch(`${API}/sites/`);
@@ -857,13 +871,13 @@ const DashboardTab = () => {
     <div>
       {/* Stat cards row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-        <StatCard label="Total Employees"  value={stats?.total_employees}      sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} />
-        <StatCard label="Employers"        value={stats?.total_employers}       sub={`${stats?.total_sites ?? "—"} sites total`} accent="#3b82f6" />
-        <StatCard label="Expired Docs"     value={stats?.total_alerts_expired}  sub="need immediate action" accent="#6b7280" glow />
-        <StatCard label="Expiring Soon"    value={stats?.total_alerts_critical} sub="within critical threshold" accent="#dc2626" glow />
-        <StatCard label="Warning"          value={stats?.total_alerts_warning}  sub="30–90 day window" accent="#d97706" />
-        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}   sub="quota full" accent="#a855f7" glow />
-        <StatCard label="Missing Documents" value={stats?.total_missing_docs}  sub="employees with incomplete records" accent="#0891b2" glow />
+        <StatCard label="Total Employees"   value={stats?.total_employees}      sub={`across ${stats?.total_sites ?? "—"} sites`} accent={C.accent} onClick={() => onNavigate("EMPLOYEES")} />
+        <StatCard label="Employers"         value={stats?.total_employers}      sub={`${stats?.total_sites ?? "—"} sites total`} accent="#3b82f6" onClick={() => onNavigate("EMPLOYERS")} />
+        <StatCard label="Expired Docs"      value={stats?.total_alerts_expired} sub="need immediate action" accent="#6b7280" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired", days: 90 })} />
+        <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within critical threshold" accent="#dc2626" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
+        <StatCard label="Warning"           value={stats?.total_alerts_warning} sub="30–90 day window" accent="#d97706" onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Warning", days: 90 })} />
+        <StatCard label="Sites at Capacity" value={stats?.sites_at_capacity}    sub="quota full" accent="#a855f7" glow onClick={() => onNavigate("EMPLOYERS")} />
+        <StatCard label="Missing Documents" value={stats?.total_missing_docs}   sub="employees with incomplete records" accent="#0891b2" glow onClick={() => onNavigate("ALERTS", { view: "missing", filter: "All", days: 60 })} />
       </div>
 
       {/* Document health grid */}
@@ -939,10 +953,10 @@ const DashboardTab = () => {
 };
 
 // ── Alerts Tab ────────────────────────────────────────────
-const AlertsTab = () => {
-  const [view, setView] = useState("expiring");   // "expiring" | "missing"
-  const [days, setDays] = useState(60);
-  const [filter, setFilter] = useState("All");
+const AlertsTab = ({ initialView = "expiring", initialFilter = "All", initialDays = 60 }) => {
+  const [view, setView] = useState(initialView);   // "expiring" | "missing"
+  const [days, setDays] = useState(initialDays);
+  const [filter, setFilter] = useState(initialFilter);
   const [employerFilter, setEmployerFilter] = useState("All");
   const { data: employers } = useFetch(`${API}/employers/`);
   const [selectedEmp, setSelectedEmp] = useState(null);
@@ -1464,6 +1478,27 @@ const EmployersTab = () => {
   const [siteEmpLoading, setSiteEmpLoading] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState(null);
 
+  const [togglingId, setTogglingId] = useState(null);
+  const [toggleError, setToggleError] = useState(null);
+
+  const handleToggleEmployer = async (employerId) => {
+    setTogglingId(employerId);
+    setToggleError(null);
+    try {
+      const res = await apiFetch(`${API}/employers/${employerId}/toggle`, { method: "PATCH" });
+      if (res.ok) {
+        refetchEmployers();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setToggleError(d.detail || `Error ${res.status}`);
+      }
+    } catch (e) {
+      setToggleError(e.message);
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const handleViewSiteEmployees = async (site) => {
     setViewSite(site);
     setSiteEmpLoading(true);
@@ -1513,6 +1548,11 @@ const EmployersTab = () => {
 
   return (
     <div>
+      {toggleError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>
+          ⚠ {toggleError}
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, gap: 12 }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
@@ -1551,25 +1591,35 @@ const EmployersTab = () => {
             const empSites   = sitesByEmployer[employer.id] || [];
             const totalSlots = empSites.reduce((s, x) => s + (x.total_quota_slots || 0), 0);
             const usedSlots  = empSites.reduce((s, x) => s + (x.used_slots || 0), 0);
+            const isDisabled = employer.is_active === false;
             return (
               <div key={employer.id} style={{
-                background: C.cardBg, border: `1px solid ${C.border}`,
+                background: C.cardBg,
+                border: `1px solid ${isDisabled ? "#fca5a5" : C.border}`,
                 borderRadius: 14, overflow: "hidden",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                opacity: isDisabled ? 0.7 : 1,
+                transition: "opacity 0.2s, border-color 0.2s",
               }}>
                 {/* Employer header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 22px", background: C.pageBg, borderBottom: empSites.length > 0 ? `1px solid ${C.border}` : "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 22px", background: isDisabled ? "#fef2f2" : C.pageBg, borderBottom: empSites.length > 0 ? `1px solid ${C.border}` : "none" }}>
                   <div style={{
                     width: 36, height: 36, borderRadius: 10,
-                    background: C.accentBg, border: `1px solid ${C.accentBorder}`,
+                    background: isDisabled ? "#fee2e2" : C.accentBg,
+                    border: `1px solid ${isDisabled ? "#fca5a5" : C.accentBorder}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    color: C.accent, fontSize: 14, fontWeight: 800, fontFamily: C.sans,
+                    color: isDisabled ? "#ef4444" : C.accent, fontSize: 14, fontWeight: 800, fontFamily: C.sans,
                     flexShrink: 0,
                   }}>
                     {employer.name.charAt(0).toUpperCase()}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ color: C.text, fontFamily: C.sans, fontSize: 15, fontWeight: 700 }}>{employer.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: isDisabled ? C.textMuted : C.text, fontFamily: C.sans, fontSize: 15, fontWeight: 700, textDecoration: isDisabled ? "line-through" : "none" }}>{employer.name}</span>
+                      {isDisabled && (
+                        <span style={{ background: "#fee2e2", color: "#ef4444", fontFamily: C.sans, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, letterSpacing: "0.05em", textTransform: "uppercase" }}>Disabled</span>
+                      )}
+                    </div>
                     {employer.registration_number && (
                       <div style={{ color: C.textMuted, fontFamily: C.mono, fontSize: 11, marginTop: 2 }}>Reg: {employer.registration_number}</div>
                     )}
@@ -1580,11 +1630,28 @@ const EmployersTab = () => {
                   {totalSlots > 0 && (
                     <span style={{ color: C.textSub, fontFamily: C.mono, fontSize: 12 }}>{usedSlots}/{totalSlots} slots</span>
                   )}
-                  <button onClick={() => { setShowSiteForm(employer.id); setForm({}); setError(null); }} style={{
-                    background: "transparent", color: C.accent, border: `1px solid ${C.accentBorder}`,
-                    padding: "6px 14px", borderRadius: 8, cursor: "pointer",
-                    fontFamily: C.sans, fontSize: 12, fontWeight: 600,
-                  }}>+ Add Site</button>
+                  {!isDisabled && (
+                    <button onClick={() => { setShowSiteForm(employer.id); setForm({}); setError(null); }} style={{
+                      background: "transparent", color: C.accent, border: `1px solid ${C.accentBorder}`,
+                      padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+                      fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+                    }}>+ Add Site</button>
+                  )}
+                  <button
+                    onClick={() => handleToggleEmployer(employer.id)}
+                    disabled={togglingId === employer.id}
+                    style={{
+                      background: isDisabled ? "#f0fdf4" : "#fff7ed",
+                      color: isDisabled ? "#16a34a" : "#d97706",
+                      border: `1px solid ${isDisabled ? "#bbf7d0" : "#fed7aa"}`,
+                      padding: "6px 14px", borderRadius: 8,
+                      cursor: togglingId === employer.id ? "not-allowed" : "pointer",
+                      fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+                      opacity: togglingId === employer.id ? 0.6 : 1,
+                    }}
+                  >
+                    {togglingId === employer.id ? "..." : isDisabled ? "Enable" : "Disable"}
+                  </button>
                 </div>
                 {empSites.length > 0 && (
                   <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2790,6 +2857,16 @@ export default function App() {
   }, [authed]);
 
   const [tab, setTab] = useState("OVERVIEW");
+  const [alertNav, setAlertNav] = useState({ view: "expiring", filter: "All", days: 60 });
+  const [alertNavKey, setAlertNavKey] = useState(0);
+
+  const handleDashNav = (newTab, opts = {}) => {
+    if (newTab === "ALERTS") {
+      setAlertNav({ view: opts.view || "expiring", filter: opts.filter || "All", days: opts.days || 60 });
+      setAlertNavKey(k => k + 1);
+    }
+    setTab(newTab);
+  };
   const { data: headerStats } = useFetch(`${API}/dashboard/stats`);
   const criticalCount = headerStats?.total_alerts_critical ?? 0;
   const expiredCount  = headerStats?.total_alerts_expired  ?? 0;
@@ -2883,8 +2960,8 @@ export default function App() {
       {/* Main content */}
       <div style={{ padding: "28px 32px" }}>
         <Tabs tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS", "REPORTS"]} active={tab} onChange={setTab} />
-        {tab === "OVERVIEW"  && <DashboardTab />}
-        {tab === "ALERTS"    && <AlertsTab />}
+        {tab === "OVERVIEW"  && <DashboardTab onNavigate={handleDashNav} />}
+        {tab === "ALERTS"    && <AlertsTab key={alertNavKey} initialView={alertNav.view} initialFilter={alertNav.filter} initialDays={alertNav.days} />}
         {tab === "EMPLOYEES" && <EmployeesTab />}
         {tab === "EMPLOYERS" && <EmployersTab />}
         {tab === "REPORTS"   && <ReportsTab />}

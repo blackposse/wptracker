@@ -15,12 +15,19 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     today = date.today()
 
-    total_employers = (await db.execute(select(func.count()).select_from(Employer))).scalar()
-    total_sites = (await db.execute(select(func.count()).select_from(Site))).scalar()
-    total_employees = (await db.execute(select(func.count()).select_from(Employee))).scalar()
+    total_employers = (await db.execute(select(func.count()).select_from(Employer).where(Employer.is_active == True))).scalar()
+    total_sites = (await db.execute(
+        select(func.count()).select_from(Site).join(Employer, Site.employer_id == Employer.id).where(Employer.is_active == True)
+    )).scalar()
+    total_employees = (await db.execute(
+        select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True)
+    )).scalar()
 
     critical_threshold = today + timedelta(days=30)
     warning_threshold = today + timedelta(days=90)
+
+    def active_employee_base():
+        return select(func.count()).select_from(Employee).join(Employer, Employee.employer_id == Employer.id).where(Employer.is_active == True)
 
     def any_expiry_in(threshold):
         return or_(
@@ -41,19 +48,21 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
         )
 
     expired_count = (await db.execute(
-        select(func.count()).select_from(Employee).where(any_expiry_in(today))
+        active_employee_base().where(any_expiry_in(today))
     )).scalar()
 
     critical_count = (await db.execute(
-        select(func.count()).select_from(Employee).where(any_expiry_between(today, critical_threshold))
+        active_employee_base().where(any_expiry_between(today, critical_threshold))
     )).scalar()
 
     warning_count = (await db.execute(
-        select(func.count()).select_from(Employee).where(any_expiry_between(critical_threshold, warning_threshold))
+        active_employee_base().where(any_expiry_between(critical_threshold, warning_threshold))
     )).scalar()
 
-    # Sites where used_slots >= total_quota_slots
-    sites_result = await db.execute(select(Site))
+    # Sites where used_slots >= total_quota_slots (only active employer sites)
+    sites_result = await db.execute(
+        select(Site).join(Employer, Site.employer_id == Employer.id).where(Employer.is_active == True)
+    )
     sites = sites_result.scalars().all()
     sites_at_capacity = 0
     for site in sites:
@@ -64,7 +73,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
             sites_at_capacity += 1
 
     missing_docs_count = (await db.execute(
-        select(func.count()).select_from(Employee).where(
+        active_employee_base().where(
             or_(
                 Employee.passport_expiry.is_(None),
                 Employee.visa_stamp_expiry.is_(None),

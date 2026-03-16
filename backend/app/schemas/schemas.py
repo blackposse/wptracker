@@ -53,6 +53,7 @@ class EmployerCreate(EmployerBase):
 class EmployerRead(EmployerBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    is_active: bool = True
 
 
 # ── Site ──────────────────────────────────────────────────

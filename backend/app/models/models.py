@@ -19,6 +19,7 @@ class Employer(Base):
     contact_name = Column(String(255))
     contact_email = Column(String(255))
     contact_phone = Column(String(50))
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
 
     sites = relationship("Site", back_populates="employer", cascade="all, delete-orphan")
     employees = relationship("Employee", back_populates="employer")

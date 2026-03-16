@@ -35,3 +35,15 @@ async def get_employer(employer_id: int, db: AsyncSession = Depends(get_db), cur
     if not emp:
         raise HTTPException(status_code=404, detail="Employer not found")
     return emp
+
+
+@router.patch("/{employer_id}/toggle", response_model=EmployerRead)
+async def toggle_employer_active(employer_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    result = await db.execute(select(Employer).where(Employer.id == employer_id))
+    emp = result.scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    emp.is_active = not emp.is_active
+    await db.commit()
+    await db.refresh(emp)
+    return emp
