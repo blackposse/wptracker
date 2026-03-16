@@ -882,11 +882,34 @@ const QuotaSlotsPanel = ({ site, onClose }) => {
 };
 
 // ── Site Card ─────────────────────────────────────────────
-const SiteCard = ({ site, onViewEmployees, onSlotsChanged }) => {
+const SiteCard = ({ site, onViewEmployees, onSlotsChanged, onSiteUpdated }) => {
   const [showSlots, setShowSlots] = useState(false);
+  const [editingQuota, setEditingQuota] = useState(false);
+  const [quotaValue, setQuotaValue] = useState(String(site.total_quota_slots));
+  const [quotaError, setQuotaError] = useState(null);
+  const [quotaSaving, setQuotaSaving] = useState(false);
+
   const pct = site.quota_utilisation_pct;
   const atCapacity = site.available_slots === 0;
   const barColor = pct >= 100 ? "#dc2626" : pct >= 80 ? "#d97706" : "#16a34a";
+
+  const handleSaveQuota = async () => {
+    const val = parseInt(quotaValue);
+    if (!val || val < 1) { setQuotaError("Must be at least 1"); return; }
+    setQuotaError(null); setQuotaSaving(true);
+    try {
+      const res = await apiFetch(`${API}/sites/${site.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ total_quota_slots: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setQuotaError(data.detail || "Error updating quota"); }
+      else { setEditingQuota(false); onSiteUpdated && onSiteUpdated(data); }
+    } catch (e) { setQuotaError(e.message); }
+    finally { setQuotaSaving(false); }
+  };
+
   return (
     <>
     <div style={{
@@ -919,7 +942,37 @@ const SiteCard = ({ site, onViewEmployees, onSlotsChanged }) => {
           title="View assigned employees">
           {site.used_slots} / {site.total_quota_slots} slots
         </button>
+        <button
+          onClick={() => { setEditingQuota(true); setQuotaValue(String(site.total_quota_slots)); setQuotaError(null); }}
+          style={{
+            background: C.pageBg, color: C.textSub,
+            border: `1px solid ${C.border}`,
+            padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+            fontFamily: C.sans, fontSize: 11,
+          }}
+          title="Edit total quota">
+          ✏
+        </button>
       </div>
+      {editingQuota && (
+        <div style={{ marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>Total slots:</span>
+          <input
+            type="number" min="1" value={quotaValue}
+            onChange={e => setQuotaValue(e.target.value)}
+            style={{ ...inputStyle(false), width: 80, padding: "5px 10px" }}
+          />
+          {quotaError && <span style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 12 }}>{quotaError}</span>}
+          <button onClick={handleSaveQuota} disabled={quotaSaving}
+            style={{ background: C.accent, color: "#fff", border: "none", padding: "5px 14px", borderRadius: 7, cursor: quotaSaving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 12, fontWeight: 600, opacity: quotaSaving ? 0.7 : 1 }}>
+            {quotaSaving ? "Saving..." : "Save"}
+          </button>
+          <button onClick={() => { setEditingQuota(false); setQuotaError(null); }}
+            style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "5px 12px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>
+            Cancel
+          </button>
+        </div>
+      )}
       <div style={{ background: C.borderLight, borderRadius: 4, height: 6, overflow: "hidden", marginBottom: 6 }}>
         <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: barColor, transition: "width 0.5s", borderRadius: 4 }} />
       </div>
@@ -1920,7 +1973,7 @@ const EmployersTab = () => {
                 </div>
                 {empSites.length > 0 && (
                   <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
-                    {empSites.map(site => <SiteCard key={site.id} site={site} onViewEmployees={handleViewSiteEmployees} />)}
+                    {empSites.map(site => <SiteCard key={site.id} site={site} onViewEmployees={handleViewSiteEmployees} onSiteUpdated={() => refetchSites()} />)}
                   </div>
                 )}
                 {empSites.length === 0 && (

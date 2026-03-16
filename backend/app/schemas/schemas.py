@@ -66,6 +66,11 @@ class SiteCreate(SiteBase):
     employer_id: int
 
 
+class SiteUpdate(BaseModel):
+    site_name: Optional[str] = None
+    total_quota_slots: Optional[int] = Field(None, gt=0)
+
+
 class SiteRead(SiteBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

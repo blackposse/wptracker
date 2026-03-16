@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from app.database import get_db
 from app.models.models import Site, Employee, User
-from app.schemas.schemas import SiteCreate, SiteRead
+from app.schemas.schemas import SiteCreate, SiteRead, SiteUpdate
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/sites", tags=["Sites"])
@@ -57,4 +57,36 @@ async def get_site(site_id: int, db: AsyncSession = Depends(get_db), current_use
     site = result.scalar_one_or_none()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+    return await _enrich_site(site, db)
+
+
+@router.patch("/{site_id}", response_model=SiteRead)
+async def update_site(
+    site_id: int,
+    payload: SiteUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    changes = payload.model_dump(exclude_unset=True)
+
+    if "total_quota_slots" in changes:
+        used = (await db.execute(
+            select(func.count()).where(Employee.site_id == site_id)
+        )).scalar() or 0
+        if changes["total_quota_slots"] < used:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot reduce quota to {changes['total_quota_slots']} — site currently has {used} employees assigned.",
+            )
+
+    for field, value in changes.items():
+        setattr(site, field, value)
+
+    await db.commit()
+    await db.refresh(site)
     return await _enrich_site(site, db)
