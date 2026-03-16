@@ -236,6 +236,54 @@ async def delete_employee(employee_id: int, db: AsyncSession = Depends(get_db), 
 DATE_FIELDS = {"passport_expiry", "visa_stamp_expiry", "insurance_expiry", "work_permit_fee_expiry", "medical_expiry"}
 UPDATABLE_FIELDS = {"full_name", "passport_number", "work_permit_number", "nationality", "job_title"} | DATE_FIELDS
 
+import re as _re
+
+_MONTH_MAP = {
+    "jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,
+    "jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12,
+}
+
+def _parse_date_flexible(val):
+    """Parse dates in YYYY-MM-DD, DD-MMM-YY, DD-MMM-YYYY, DD-MM-YY, DD-MM-YYYY formats."""
+    v = (val or "").strip().strip(".")
+    if not v or v.lower() == "null":
+        return None
+    try:
+        return date.fromisoformat(v)
+    except ValueError:
+        pass
+    m = _re.match(r"^(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{2,4})$", v)
+    if m:
+        d, mon, y = int(m.group(1)), m.group(2).lower()[:3], int(m.group(3))
+        mo = _MONTH_MAP.get(mon)
+        if mo:
+            if y < 100:
+                y += 2000 if y <= 50 else 1900
+            try:
+                return date(y, mo, d)
+            except ValueError:
+                pass
+    m = _re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$", v)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if y < 100:
+            y += 2000 if y <= 50 else 1900
+        try:
+            return date(y, mo, d)
+        except ValueError:
+            pass
+    return None
+
+def _extract_slot_number(val):
+    """Extract QS slot number from values like 'QP00003731 (QS00022960)'."""
+    v = (val or "").strip()
+    if not v:
+        return None
+    m = _re.search(r"\(?\s*(QS\w+)\s*\)?", v, _re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    return _re.sub(r"[() ]", "", v) or None
+
 FIELD_LABELS = {
     "full_name": "Full Name",
     "passport_number": "Passport Number",
@@ -291,7 +339,7 @@ async def bulk_update_employees(
                 continue
             try:
                 if field in DATE_FIELDS:
-                    value = date.fromisoformat(raw) if raw.lower() != "null" else None
+                    value = _parse_date_flexible(raw) if raw.lower() != "null" else None
                 else:
                     value = raw if raw.lower() != "null" else None
                 old_val = str(getattr(emp, field)) if getattr(emp, field) is not None else None
@@ -303,7 +351,7 @@ async def bulk_update_employees(
                 errors.append(f"Row {i} ({emp_num}): invalid value '{raw}' for '{field}'")
 
         # Handle quota_slot_number — assigns employee to a slot by slot number
-        raw_slot_number = row.get("quota_slot_number", "").strip()
+        raw_slot_number = _extract_slot_number(row.get("quota_slot_number"))
         if raw_slot_number:
             if raw_slot_number.lower() == "null":
                 old_slot_id = str(emp.quota_slot_id) if emp.quota_slot_id else None
@@ -327,7 +375,7 @@ async def bulk_update_employees(
                 errors.append(f"Row {i} ({emp_num}): quota_slot_expiry provided but employee has no assigned quota slot")
             else:
                 try:
-                    new_slot_expiry = date.fromisoformat(raw_slot_expiry) if raw_slot_expiry.lower() != "null" else None
+                    new_slot_expiry = _parse_date_flexible(raw_slot_expiry) if raw_slot_expiry.lower() != "null" else None
                     slot = (await db.execute(select(QuotaSlot).where(QuotaSlot.id == emp.quota_slot_id))).scalar_one_or_none()
                     if slot:
                         old_slot_expiry = str(slot.expiry_date) if slot.expiry_date else None
@@ -379,6 +427,26 @@ async def bulk_create_employees(
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
         raise HTTPException(status_code=400, detail="CSV must have columns: full_name, employer_name, site_name")
 
+    # ── Site cache to avoid re-creating within this import ──
+    _site_cache: dict = {}
+
+    async def get_or_create_site(employer_id, site_name_key):
+        cache_key = (employer_id, site_name_key.lower())
+        if cache_key in _site_cache:
+            return _site_cache[cache_key]
+        site = (await db.execute(
+            select(Site).where(
+                func.lower(Site.site_name) == site_name_key.lower(),
+                Site.employer_id == employer_id,
+            )
+        )).scalar_one_or_none()
+        if not site:
+            site = Site(employer_id=employer_id, site_name=site_name_key, total_quota_slots=999)
+            db.add(site)
+            await db.flush()
+        _site_cache[cache_key] = site
+        return site
+
     created, skipped, errors = 0, 0, []
 
     for i, row in enumerate(reader, start=2):
@@ -397,23 +465,8 @@ async def bulk_create_employees(
             errors.append(f"Row {i} ({full_name}): employer '{employer_name}' not found")
             continue
 
-        # Look up site within that employer (case-insensitive)
-        site = (await db.execute(
-            select(Site).where(
-                func.lower(Site.site_name) == site_name.lower(),
-                Site.employer_id == employer.id,
-            )
-        )).scalar_one_or_none()
-        if not site:
-            errors.append(f"Row {i} ({full_name}): site '{site_name}' not found under '{employer_name}'")
-            continue
-
-        # Quota check
-        used = (await db.execute(select(func.count()).where(Employee.site_id == site.id))).scalar()
-        if used >= site.total_quota_slots:
-            errors.append(f"Row {i} ({full_name}): site '{site_name}' is at full quota ({site.total_quota_slots})")
-            skipped += 1
-            continue
+        # Look up or auto-create site
+        site = await get_or_create_site(employer.id, site_name)
 
         # Passport number uniqueness
         passport_number = (row.get("passport_number") or "").strip() or None
@@ -433,35 +486,27 @@ async def bulk_create_employees(
             max_id += 1
             emp_number = f"EMP-{100 + max_id}"
 
-        # Parse optional date fields
-        def parse_date(val):
-            v = (val or "").strip()
-            if not v or v.lower() == "null":
-                return None
-            try:
-                return date.fromisoformat(v)
-            except ValueError:
-                return None
-
-        # Resolve optional quota slot
+        # Resolve optional quota slot (extract QS number from composite values)
         quota_slot_id = None
-        slot_number_raw = (row.get("quota_slot_number") or "").strip()
+        slot_number_raw = _extract_slot_number(row.get("quota_slot_number"))
         slot_expiry_raw = (row.get("quota_slot_expiry") or "").strip()
         if slot_number_raw:
             slot = (await db.execute(
                 select(QuotaSlot).where(QuotaSlot.slot_number == slot_number_raw)
             )).scalar_one_or_none()
             if not slot:
-                errors.append(f"Row {i} ({full_name}): quota slot '{slot_number_raw}' not found")
-                skipped += 1
-                continue
-            if slot.site_id != site.id:
-                errors.append(f"Row {i} ({full_name}): quota slot '{slot_number_raw}' does not belong to site '{site_name}'")
+                # Auto-create the quota slot under this site
+                slot = QuotaSlot(site_id=site.id, slot_number=slot_number_raw,
+                                 expiry_date=_parse_date_flexible(slot_expiry_raw))
+                db.add(slot)
+                await db.flush()
+            elif slot.site_id != site.id:
+                errors.append(f"Row {i} ({full_name}): quota slot '{slot_number_raw}' belongs to a different site")
                 skipped += 1
                 continue
             quota_slot_id = slot.id
-            if slot_expiry_raw:
-                slot.expiry_date = parse_date(slot_expiry_raw)
+            if slot_expiry_raw and slot.expiry_date != _parse_date_flexible(slot_expiry_raw):
+                slot.expiry_date = _parse_date_flexible(slot_expiry_raw)
 
         emp = Employee(
             employer_id=employer.id,
@@ -472,11 +517,11 @@ async def bulk_create_employees(
             work_permit_number=(row.get("work_permit_number") or "").strip() or None,
             nationality=(row.get("nationality") or "").strip() or None,
             job_title=(row.get("job_title") or "").strip() or None,
-            passport_expiry=parse_date(row.get("passport_expiry")),
-            visa_stamp_expiry=parse_date(row.get("visa_stamp_expiry")),
-            insurance_expiry=parse_date(row.get("insurance_expiry")),
-            work_permit_fee_expiry=parse_date(row.get("work_permit_fee_expiry")),
-            medical_expiry=parse_date(row.get("medical_expiry")),
+            passport_expiry=_parse_date_flexible(row.get("passport_expiry")),
+            visa_stamp_expiry=_parse_date_flexible(row.get("visa_stamp_expiry")),
+            insurance_expiry=_parse_date_flexible(row.get("insurance_expiry")),
+            work_permit_fee_expiry=_parse_date_flexible(row.get("work_permit_fee_expiry")),
+            medical_expiry=_parse_date_flexible(row.get("medical_expiry")),
             quota_slot_id=quota_slot_id,
         )
         db.add(emp)
