@@ -1532,6 +1532,7 @@ const DashboardTab = ({ onNavigate }) => {
           <CategorySection title="INSURANCE"       alerts={byType["Insurance"]}       onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="VISA STAMP"      alerts={byType["Visa Stamp"]}      onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="MEDICAL"         alerts={byType["Medical"]}         onEmployeeClick={handleEmployeeClick} />
+          <CategorySection title="QUOTA SLOT"      alerts={byType["Quota Slot"]}      onEmployeeClick={handleEmployeeClick} />
         </div>
       )}
 
@@ -1584,7 +1585,7 @@ const AlertsTab = ({ initialView = "expiring", initialFilter = "All", initialDay
 
   // ── Expiring view ─────────────────────────────────────
   const STATUS_PRIORITY = { Expired: 4, Critical: 3, Warning: 2, Valid: 1 };
-  const DOC_COLS = ["Passport", "Visa Stamp", "Insurance", "Work Permit Fee", "Medical"];
+  const DOC_COLS = ["Passport", "Visa Stamp", "Insurance", "Work Permit Fee", "Medical", "Quota Slot"];
 
   const allAlerts = (expiringData?.alerts || []);
   const groupMap = {};
