@@ -4,7 +4,7 @@ from sqlalchemy import select, func, or_, and_, case
 from datetime import date, timedelta
 
 from app.database import get_db
-from app.models.models import Employer, Site, Employee, User
+from app.models.models import Employer, Site, Employee, User, QuotaSlot
 from app.schemas.schemas import DashboardStats
 from app.auth import get_current_user
 
@@ -84,6 +84,27 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
         )
     )).scalar()
 
+    quota_expired_count = (await db.execute(
+        select(func.count()).select_from(Employee)
+        .join(Employer, Employee.employer_id == Employer.id)
+        .join(QuotaSlot, Employee.quota_slot_id == QuotaSlot.id)
+        .where(Employer.is_active == True)
+        .where(Employee.resigned == False)
+        .where(QuotaSlot.expiry_date.isnot(None))
+        .where(QuotaSlot.expiry_date < today)
+    )).scalar()
+
+    quota_expiring_count = (await db.execute(
+        select(func.count()).select_from(Employee)
+        .join(Employer, Employee.employer_id == Employer.id)
+        .join(QuotaSlot, Employee.quota_slot_id == QuotaSlot.id)
+        .where(Employer.is_active == True)
+        .where(Employee.resigned == False)
+        .where(QuotaSlot.expiry_date.isnot(None))
+        .where(QuotaSlot.expiry_date >= today)
+        .where(QuotaSlot.expiry_date <= critical_threshold)
+    )).scalar()
+
     return DashboardStats(
         total_employers=total_employers,
         total_sites=total_sites,
@@ -93,4 +114,6 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db), current_user: 
         total_alerts_expired=expired_count,
         sites_at_capacity=sites_at_capacity,
         total_missing_docs=missing_docs_count,
+        total_quota_slots_expired=quota_expired_count,
+        total_quota_slots_expiring=quota_expiring_count,
     )

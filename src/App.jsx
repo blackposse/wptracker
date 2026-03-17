@@ -1250,6 +1250,7 @@ const CATEGORY_META = {
   "INSURANCE":       { color: "#ca8a04", icon: "🛡" },
   "VISA STAMP":      { color: "#a855f7", icon: "🔖" },
   "MEDICAL":         { color: "#0891b2", icon: "🏥" },
+  "QUOTA SLOT":      { color: "#059669", icon: "🎫" },
 };
 
 const CategorySection = ({ title, alerts, onEmployeeClick }) => {
@@ -1389,6 +1390,7 @@ const DashboardTab = ({ onNavigate }) => {
     "Insurance": [],
     "Visa Stamp": [],
     "Medical": [],
+    "Quota Slot": [],
   };
   (alertData?.alerts || []).forEach(a => {
     if (byType[a.expiry_type]) byType[a.expiry_type].push(a);
@@ -1400,6 +1402,7 @@ const DashboardTab = ({ onNavigate }) => {
     { key: "Insurance",       label: "Insurance",       color: "#ca8a04", metaKey: "INSURANCE"       },
     { key: "Visa Stamp",      label: "Visa Stamp",      color: "#a855f7", metaKey: "VISA STAMP"      },
     { key: "Medical",         label: "Medical",         color: "#0891b2", metaKey: "MEDICAL"         },
+    { key: "Quota Slot",      label: "Quota Slots",     color: "#059669", metaKey: "QUOTA SLOT"      },
   ];
 
   const totalAlerts = (alertData?.alerts || []).length;
@@ -1415,6 +1418,7 @@ const DashboardTab = ({ onNavigate }) => {
         <StatCard label="Expiring Soon"     value={stats?.total_alerts_critical} sub="within 30 days"                                     accent="#f97316" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Critical", days: 90 })} />
         <StatCard label="Expired Docs"      value={stats?.total_alerts_expired}  sub="need immediate action"                              accent="#b91c1c" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "Expired",  days: 90 })} />
         <StatCard label="Missing Documents" value={stats?.total_missing_docs}    sub="employees with incomplete records"                  accent="#0891b2" glow onClick={() => onNavigate("ALERTS", { view: "missing",  filter: "All",     days: 60 })} />
+        <StatCard label="Quota Slots Expired" value={stats?.total_quota_slots_expired} sub={`${stats?.total_quota_slots_expiring ?? 0} expiring soon`} accent="#059669" glow onClick={() => onNavigate("ALERTS", { view: "expiring", filter: "All", days: 90 })} />
       </div>
 
       {/* Document health grid */}
@@ -1422,7 +1426,7 @@ const DashboardTab = ({ onNavigate }) => {
         <div style={{ color: C.textMuted, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: C.sans, marginBottom: 12 }}>
           Document Health — 90-Day Window
         </div>
-        <div className="dg-doc-grid" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+        <div className="dg-doc-grid" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12 }}>
           {categorySummary.map(({ key, label, color, metaKey }) => {
             const items = byType[key] || [];
             const exp   = items.filter(a => a.status === "Expired").length;
@@ -1840,6 +1844,7 @@ function worstStatus(emp) {
     emp.insurance_status?.status,
     emp.work_permit_fee_status?.status,
     emp.medical_status?.status,
+    emp.quota_slot_expired ? "Expired" : null,
   ].filter(Boolean);
   if (!statuses.length) return null;
   return statuses.reduce((best, s) => (STATUS_RANK[s] || 0) > (STATUS_RANK[best] || 0) ? s : best);
@@ -2188,6 +2193,19 @@ const EmployeesTab = () => {
                             }}>{short}</span>
                           );
                         })}
+                        {emp.quota_slot_id && (() => {
+                          const st = emp.quota_slot_expired ? "Expired" : emp.quota_slot_expiry ? "Valid" : null;
+                          const cfg = STATUS_CONFIG[st];
+                          return (
+                            <span title={`QS: ${st || "no slot"} ${emp.quota_slot_expiry ? `(${emp.quota_slot_expiry})` : ""}`} style={{
+                              background: cfg ? cfg.bg : "#f3f4f6",
+                              color: cfg ? cfg.color : C.textMuted,
+                              border: `1px solid ${cfg ? cfg.color + "40" : C.border}`,
+                              padding: "2px 6px", borderRadius: 6,
+                              fontSize: 10, fontFamily: C.mono, fontWeight: 700,
+                            }}>QS</span>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -3444,6 +3462,7 @@ const DOC_TYPES = [
   { value: "visa_stamp",       label: "Visa Stamp" },
   { value: "insurance",        label: "Insurance" },
   { value: "medical",          label: "Medical" },
+  { value: "quota_slot",       label: "Quota Slot" },
 ];
 
 const ReportPreview = ({ data }) => {

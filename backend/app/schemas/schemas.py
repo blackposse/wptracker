@@ -249,3 +249,5 @@ class DashboardStats(BaseModel):
     total_alerts_expired: int
     sites_at_capacity: int
     total_missing_docs: int
+    total_quota_slots_expired: int = 0
+    total_quota_slots_expiring: int = 0

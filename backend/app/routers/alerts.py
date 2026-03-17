@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from app.database import get_db
-from app.models.models import Employee, Site, Employer, User
+from app.models.models import Employee, Site, Employer, User, QuotaSlot
 from app.schemas.schemas import AlertsResponse, ExpiryAlert, ExpiryStatus, MissingDocAlert, MissingDocResponse
 from app.services.expiry import calculate_expiry_status, EXPIRY_FIELDS
 from app.auth import get_current_user
@@ -28,9 +28,10 @@ async def get_expiring_alerts(
     horizon = today + timedelta(days=days)
 
     q = (
-        select(Employee, Site, Employer)
+        select(Employee, Site, Employer, QuotaSlot)
         .join(Site, Employee.site_id == Site.id)
         .join(Employer, Employee.employer_id == Employer.id)
+        .outerjoin(QuotaSlot, Employee.quota_slot_id == QuotaSlot.id)
         .where(Employer.is_active == True)
         .where(Employee.resigned == False)
     )
@@ -47,13 +48,14 @@ async def get_expiring_alerts(
                 and_(Employee.insurance_expiry.isnot(None),       Employee.insurance_expiry <= horizon),
                 and_(Employee.work_permit_fee_expiry.isnot(None), Employee.work_permit_fee_expiry <= horizon),
                 and_(Employee.medical_expiry.isnot(None),         Employee.medical_expiry <= horizon),
+                and_(QuotaSlot.expiry_date.isnot(None),           QuotaSlot.expiry_date <= horizon),
             )
         )
 
     rows = (await db.execute(q)).all()
 
     alerts: list[ExpiryAlert] = []
-    for emp, site, employer in rows:
+    for emp, site, employer, slot in rows:
         for field_name, label, critical_days, warning_days in EXPIRY_FIELDS:
             expiry_date = getattr(emp, field_name)
             if expiry_date is None:
@@ -69,6 +71,23 @@ async def get_expiring_alerts(
                         site_name=site.site_name,
                         expiry_type=label,
                         expiry_date=expiry_date,
+                        days_remaining=detail.days_remaining,
+                        status=detail.status,
+                    )
+                )
+        # Quota slot expiry
+        if slot and slot.expiry_date:
+            detail = calculate_expiry_status(slot.expiry_date, critical_days=30, warning_days=90)
+            if detail and (employer_id is not None or detail.status != ExpiryStatus.VALID):
+                alerts.append(
+                    ExpiryAlert(
+                        employee_id=emp.id,
+                        employee_number=emp.employee_number,
+                        full_name=emp.full_name,
+                        employer_name=employer.name,
+                        site_name=site.site_name,
+                        expiry_type="Quota Slot",
+                        expiry_date=slot.expiry_date,
                         days_remaining=detail.days_remaining,
                         status=detail.status,
                     )
@@ -116,6 +135,46 @@ async def get_expiry_by_type(
         )
         for field_name, *_ in fields
     ]
+
+    # Handle quota_slot as a special doc_type
+    if doc_type == "quota_slot":
+        qs_q = (
+            select(Employee, Site, Employer, QuotaSlot)
+            .join(Site, Employee.site_id == Site.id)
+            .join(Employer, Employee.employer_id == Employer.id)
+            .join(QuotaSlot, Employee.quota_slot_id == QuotaSlot.id)
+            .where(Employer.is_active == True)
+            .where(Employee.resigned == False)
+            .where(QuotaSlot.expiry_date.isnot(None))
+            .where(QuotaSlot.expiry_date >= d_from)
+            .where(QuotaSlot.expiry_date <= d_to)
+        )
+        if employer_id is not None:
+            qs_q = qs_q.where(Employee.employer_id == employer_id)
+        qs_rows = (await db.execute(qs_q)).all()
+        alerts: list[ExpiryAlert] = []
+        for emp, site, employer, slot in qs_rows:
+            detail = calculate_expiry_status(slot.expiry_date, critical_days=30, warning_days=90)
+            if detail:
+                alerts.append(ExpiryAlert(
+                    employee_id=emp.id,
+                    employee_number=emp.employee_number,
+                    full_name=emp.full_name,
+                    employer_name=employer.name,
+                    site_name=site.site_name,
+                    expiry_type="Quota Slot",
+                    expiry_date=slot.expiry_date,
+                    days_remaining=detail.days_remaining,
+                    status=detail.status,
+                ))
+        alerts.sort(key=lambda a: a.expiry_date)
+        return AlertsResponse(
+            total=len(alerts),
+            critical=sum(1 for a in alerts if a.status == ExpiryStatus.CRITICAL),
+            warning=sum(1 for a in alerts if a.status == ExpiryStatus.WARNING),
+            expired=sum(1 for a in alerts if a.status == ExpiryStatus.EXPIRED),
+            alerts=alerts,
+        )
 
     q = (
         select(Employee, Site, Employer)
