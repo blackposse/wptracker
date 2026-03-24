@@ -407,7 +407,6 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
     nationality:            emp.nationality || "",
     job_title:              emp.job_title || "",
     passport_expiry:        emp.passport_expiry || "",
-    visa_stamp_expiry:      emp.visa_stamp_expiry || "",
     insurance_expiry:       emp.insurance_expiry || "",
     work_permit_fee_expiry: emp.work_permit_fee_expiry || "",
     medical_expiry:         emp.medical_expiry || "",
@@ -483,7 +482,7 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
   const handleSave = async () => {
     setError(null); setSaving(true);
     const payload = { ...form };
-    ["passport_expiry","visa_stamp_expiry","insurance_expiry","work_permit_fee_expiry","medical_expiry"].forEach(f => {
+    ["passport_expiry","insurance_expiry","work_permit_fee_expiry","medical_expiry"].forEach(f => {
       if (payload[f] === "") payload[f] = null;
     });
     if (payload.passport_number === "") payload.passport_number = null;
@@ -554,7 +553,6 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
 
   const docRows = [
     { label: "Passport",        name: "passport_expiry",        status: emp.passport_status },
-    { label: "Visa Stamp",      name: "visa_stamp_expiry",      status: emp.visa_stamp_status },
     { label: "Insurance",       name: "insurance_expiry",       status: emp.insurance_status },
     { label: "Work Permit Fee", name: "work_permit_fee_expiry", status: emp.work_permit_fee_status },
     { label: "Medical",         name: "medical_expiry",         status: emp.medical_status },
@@ -839,7 +837,6 @@ const EmployeeDetailModal = ({ emp, sites, employers, onClose, onUpdated, onDele
               </select>
             </div>
             <InputRow label="Passport Expiry" name="passport_expiry" type="date" value={form.passport_expiry} onChange={handleChange} />
-            <ExtendField label="Visa Stamp Expiry"  name="visa_stamp_expiry"  value={form.visa_stamp_expiry}  onChange={handleChange} unit="years" />
             <ExtendField label="Insurance Expiry"   name="insurance_expiry"   value={form.insurance_expiry}   onChange={handleChange} unit="years" />
             <ExtendField label="Work Permit Fee Expiry" name="work_permit_fee_expiry" value={form.work_permit_fee_expiry} onChange={handleChange} unit="months" />
             <ExtendField label="Medical Expiry"     name="medical_expiry"     value={form.medical_expiry}     onChange={handleChange} unit="years" />
@@ -1248,7 +1245,6 @@ const CATEGORY_META = {
   "PASSPORTS":       { color: "#2563eb", icon: "🛂" },
   "WORK PERMIT FEE": { color: "#f97316", icon: "📋" },
   "INSURANCE":       { color: "#ca8a04", icon: "🛡" },
-  "VISA STAMP":      { color: "#a855f7", icon: "🔖" },
   "MEDICAL":         { color: "#0891b2", icon: "🏥" },
   "QUOTA SLOT":      { color: "#059669", icon: "🎫" },
 };
@@ -1388,7 +1384,6 @@ const DashboardTab = ({ onNavigate }) => {
     "Passport": [],
     "Work Permit Fee": [],
     "Insurance": [],
-    "Visa Stamp": [],
     "Medical": [],
     "Quota Slot": [],
   };
@@ -1400,7 +1395,6 @@ const DashboardTab = ({ onNavigate }) => {
     { key: "Passport",        label: "Passports",       color: "#2563eb", metaKey: "PASSPORTS"       },
     { key: "Work Permit Fee", label: "Work Permit Fee", color: "#f97316", metaKey: "WORK PERMIT FEE" },
     { key: "Insurance",       label: "Insurance",       color: "#ca8a04", metaKey: "INSURANCE"       },
-    { key: "Visa Stamp",      label: "Visa Stamp",      color: "#a855f7", metaKey: "VISA STAMP"      },
     { key: "Medical",         label: "Medical",         color: "#0891b2", metaKey: "MEDICAL"         },
     { key: "Quota Slot",      label: "Quota Slots",     color: "#059669", metaKey: "QUOTA SLOT"      },
   ];
@@ -1530,7 +1524,6 @@ const DashboardTab = ({ onNavigate }) => {
           <CategorySection title="PASSPORTS"       alerts={byType["Passport"]}        onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="WORK PERMIT FEE" alerts={byType["Work Permit Fee"]} onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="INSURANCE"       alerts={byType["Insurance"]}       onEmployeeClick={handleEmployeeClick} />
-          <CategorySection title="VISA STAMP"      alerts={byType["Visa Stamp"]}      onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="MEDICAL"         alerts={byType["Medical"]}         onEmployeeClick={handleEmployeeClick} />
           <CategorySection title="QUOTA SLOT"      alerts={byType["Quota Slot"]}      onEmployeeClick={handleEmployeeClick} />
         </div>
@@ -1585,7 +1578,7 @@ const AlertsTab = ({ initialView = "expiring", initialFilter = "All", initialDay
 
   // ── Expiring view ─────────────────────────────────────
   const STATUS_PRIORITY = { Expired: 4, Critical: 3, Warning: 2, Valid: 1 };
-  const DOC_COLS = ["Passport", "Visa Stamp", "Insurance", "Work Permit Fee", "Medical", "Quota Slot"];
+  const DOC_COLS = ["Passport", "Insurance", "Work Permit Fee", "Medical", "Quota Slot"];
 
   const allAlerts = (expiringData?.alerts || []);
   const groupMap = {};
@@ -1629,7 +1622,6 @@ const AlertsTab = ({ initialView = "expiring", initialFilter = "All", initialDay
 
   const DOC_FIELD_COLORS = {
     "Passport":        { bg: "#eff6ff", color: "#1d4ed8" },
-    "Visa Stamp":      { bg: "#f5f3ff", color: "#6d28d9" },
     "Insurance":       { bg: "#fff7ed", color: "#c2410c" },
     "Work Permit Fee": { bg: "#fefce8", color: "#a16207" },
     "Medical":         { bg: "#ecfeff", color: "#0e7490" },
@@ -1841,7 +1833,6 @@ const STATUS_RANK = { Expired: 4, Critical: 3, Warning: 2, Valid: 1 };
 function worstStatus(emp) {
   const statuses = [
     emp.passport_status?.status,
-    emp.visa_stamp_status?.status,
     emp.insurance_status?.status,
     emp.work_permit_fee_status?.status,
     emp.medical_status?.status,
@@ -2177,7 +2168,6 @@ const EmployeesTab = () => {
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                         {[
                           { key: "passport_status",        short: "PP" },
-                          { key: "visa_stamp_status",      short: "VS" },
                           { key: "insurance_status",       short: "IN" },
                           { key: "work_permit_fee_status", short: "WP" },
                           { key: "medical_status",         short: "MD" },
@@ -2306,7 +2296,6 @@ const EmployeesTab = () => {
             </div>
             <InputRow label="Job Title" name="job_title" value={form.job_title || ""} onChange={handleFormChange} />
             <InputRow label="Passport Expiry" name="passport_expiry" type="date" value={form.passport_expiry || ""} onChange={handleFormChange} />
-            <ExtendField label="Visa Stamp Expiry"  name="visa_stamp_expiry"  value={form.visa_stamp_expiry || ""}  onChange={handleFormChange} unit="years" />
             <ExtendField label="Insurance Expiry"   name="insurance_expiry"   value={form.insurance_expiry || ""}   onChange={handleFormChange} unit="years" />
             <ExtendField label="Work Permit Fee Expiry" name="work_permit_fee_expiry" value={form.work_permit_fee_expiry || ""} onChange={handleFormChange} unit="months" />
             <ExtendField label="Medical Expiry"     name="medical_expiry"     value={form.medical_expiry || ""}     onChange={handleFormChange} unit="years" />
@@ -2627,7 +2616,6 @@ const EmployersTab = () => {
                       <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.nationality || "—"}</td>
                       <td style={{ padding: "9px 12px", color: C.textSub, fontFamily: C.sans, fontSize: 12 }}>{emp.job_title || "—"}</td>
                       <td style={{ padding: "9px 12px" }}>{emp.passport_status        ? <Badge status={emp.passport_status.status}        /> : <span style={{ color: C.textMuted }}>—</span>}</td>
-                      <td style={{ padding: "9px 12px" }}>{emp.visa_stamp_status      ? <Badge status={emp.visa_stamp_status.status}      /> : <span style={{ color: C.textMuted }}>—</span>}</td>
                       <td style={{ padding: "9px 12px" }}>{emp.insurance_status       ? <Badge status={emp.insurance_status.status}       /> : <span style={{ color: C.textMuted }}>—</span>}</td>
                       <td style={{ padding: "9px 12px" }}>{emp.work_permit_fee_status ? <Badge status={emp.work_permit_fee_status.status} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
                       <td style={{ padding: "9px 12px" }}>{emp.medical_status         ? <Badge status={emp.medical_status.status}         /> : <span style={{ color: C.textMuted }}>—</span>}</td>
@@ -2663,15 +2651,15 @@ const EmployersTab = () => {
 
 // ── CSV Import Modal ──────────────────────────────────────
 const CSV_UPDATE_TEMPLATE = [
-  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
-  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
-  "EMP-101,,,,,,,,2026-07-20,2026-10-01,2026-04-20,,",
+  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
+  "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
+  "EMP-101,,,,,,,2026-07-20,2026-10-01,2026-04-20,,",
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
-  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,visa_stamp_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
-  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
-  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-03-20,2027-06-10,2027-03-20,2027-03-20,,",
+  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
+  "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
+  "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-06-10,2027-03-20,2027-03-20,,",
 ].join("\n");
 
 const CsvImportModal = ({ onClose, onDone }) => {
@@ -2716,7 +2704,6 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
     { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
     { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
-    { col: "visa_stamp_expiry",      note: "Date format: YYYY-MM-DD" },
     { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
     { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
     { col: "medical_expiry",         note: "Date format: YYYY-MM-DD — renewed yearly" },
@@ -2732,7 +2719,6 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino — leave blank to keep current" },
     { col: "job_title",              note: "e.g. Site Supervisor, Electrician — leave blank to keep current" },
     { col: "passport_expiry",        note: "YYYY-MM-DD — leave blank to keep current date" },
-    { col: "visa_stamp_expiry",      note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "insurance_expiry",       note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "work_permit_fee_expiry", note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "medical_expiry",         note: "YYYY-MM-DD — leave blank to keep current date" },
@@ -3116,7 +3102,6 @@ const LoginScreen = ({ onLogin }) => {
 // ── Reports ────────────────────────────────────────────────
 const DOC_STATUS_FIELDS = [
   { key: "passport_status",        expKey: "passport_expiry",        label: "Passport" },
-  { key: "visa_stamp_status",      expKey: "visa_stamp_expiry",      label: "Visa Stamp" },
   { key: "insurance_status",       expKey: "insurance_expiry",       label: "Insurance" },
   { key: "work_permit_fee_status", expKey: "work_permit_fee_expiry", label: "WPF" },
   { key: "medical_status",         expKey: "medical_expiry",         label: "Medical" },
@@ -3198,7 +3183,6 @@ function exportCompliancePDF(employees, employerName) {
         String(i + 1), emp.employee_number, emp.full_name,
         emp.passport_number || "—", emp.nationality || "—", emp.job_title || "—",
         emp.passport_status?.status || "—",
-        emp.visa_stamp_status?.status || "—",
         emp.insurance_status?.status || "—",
         emp.work_permit_fee_status?.status || "—",
         emp.medical_status?.status || "—",
@@ -3209,7 +3193,7 @@ function exportCompliancePDF(employees, employerName) {
 
   autoTable(doc, {
     startY: 40,
-    head: [["#", "EMP ID", "Name", "Passport No.", "Nationality", "Job Title", "Passport", "Visa Stamp", "Insurance", "WPF", "Medical"]],
+    head: [["#", "EMP ID", "Name", "Passport No.", "Nationality", "Job Title", "Passport", "Insurance", "WPF", "Medical"]],
     body: allRows,
     styles: { fontSize: 7.5, cellPadding: 2, font: "helvetica" },
     headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold", fontSize: 8 },
@@ -3288,19 +3272,19 @@ function exportMissingPDF(alerts, employerName) {
   // eslint-disable-next-line new-cap
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const today = pdfHeader(doc, "MISSING DOCUMENTS REPORT", employerName || "All Employers", true);
-  const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+  const ALL_FIELDS = ["Passport","Insurance","Work Permit Fee","Medical"];
   autoTable(doc, {
     startY: 28,
-    head: [["Employer","Site","Emp ID","Full Name","Passport","Visa Stamp","Insurance","WPF","Medical","Missing"]],
+    head: [["Employer","Site","Emp ID","Full Name","Passport","Insurance","WPF","Medical","Missing"]],
     body: alerts.map(r => [
       r.employer_name, r.site_name, r.employee_number, r.full_name,
       ...ALL_FIELDS.map(f => r.missing_fields.includes(f) ? "MISSING" : "SET"),
-      `${r.missing_fields.length}/5`,
+      `${r.missing_fields.length}/4`,
     ]),
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold" },
     didParseCell: (d) => {
-      if (d.section === "body" && d.column.index >= 4 && d.column.index <= 8) {
+      if (d.section === "body" && d.column.index >= 4 && d.column.index <= 7) {
         if (d.cell.raw === "MISSING") { d.cell.styles.fillColor = [254,242,242]; d.cell.styles.textColor = [220,38,38]; d.cell.styles.fontStyle = "bold"; }
         else { d.cell.styles.fillColor = [240,253,244]; d.cell.styles.textColor = [22,163,74]; }
       }
@@ -3371,18 +3355,17 @@ function exportReportExcel(reportData, employerName) {
     summaryWs["!cols"] = [{ wch: 22 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
-    const headers = ["Employer","Site","Emp ID","Full Name","Passport No.","Nationality","Job Title","Passport Status","Passport Expiry","Visa Stamp Status","Visa Stamp Expiry","Insurance Status","Insurance Expiry","WPF Status","WPF Expiry","Medical Status","Medical Expiry"];
+    const headers = ["Employer","Site","Emp ID","Full Name","Passport No.","Nationality","Job Title","Passport Status","Passport Expiry","Insurance Status","Insurance Expiry","WPF Status","WPF Expiry","Medical Status","Medical Expiry"];
     const rows = employees.map(emp => [
       emp.employer_name, emp.site_name, emp.employee_number, emp.full_name,
       emp.passport_number || "", emp.nationality || "", emp.job_title || "",
       emp.passport_status?.status || "", emp.passport_expiry || "",
-      emp.visa_stamp_status?.status || "", emp.visa_stamp_expiry || "",
       emp.insurance_status?.status || "", emp.insurance_expiry || "",
       emp.work_permit_fee_status?.status || "", emp.work_permit_fee_expiry || "",
       emp.medical_status?.status || "", emp.medical_expiry || "",
     ]);
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws["!cols"] = [20,22,14,28,18,16,20,16,14,16,14,16,14,14,12,14,12].map(w => ({ wch: w }));
+    ws["!cols"] = [20,22,14,28,18,16,20,16,14,16,14,14,12,14,12].map(w => ({ wch: w }));
     ws["!freeze"] = { xSplit: 0, ySplit: 1 };
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
 
@@ -3394,14 +3377,14 @@ function exportReportExcel(reportData, employerName) {
     XLSX.utils.book_append_sheet(wb, ws, "Expiry Alerts");
 
   } else if (reportData.type === "missing") {
-    const headers = ["Employer","Site","Emp ID","Full Name","Passport","Visa Stamp","Insurance","Work Permit Fee","Medical","Missing Count"];
-    const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+    const headers = ["Employer","Site","Emp ID","Full Name","Passport","Insurance","Work Permit Fee","Medical","Missing Count"];
+    const ALL_FIELDS = ["Passport","Insurance","Work Permit Fee","Medical"];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...reportData.alerts.map(r => [
       r.employer_name, r.site_name, r.employee_number, r.full_name,
       ...ALL_FIELDS.map(f => r.missing_fields.includes(f) ? "MISSING" : "SET"),
-      `${r.missing_fields.length}/5`,
+      `${r.missing_fields.length}/4`,
     ])]);
-    ws["!cols"] = [20,20,14,28,10,12,12,16,10,14].map(w => ({ wch: w }));
+    ws["!cols"] = [20,20,14,28,10,12,16,10,14].map(w => ({ wch: w }));
     ws["!freeze"] = { xSplit: 0, ySplit: 1 };
     XLSX.utils.book_append_sheet(wb, ws, "Missing Documents");
 
@@ -3460,7 +3443,6 @@ const DOC_TYPES = [
   { value: "all",              label: "All Documents" },
   { value: "work_permit_fee",  label: "Work Permit Fee" },
   { value: "passport",         label: "Passport" },
-  { value: "visa_stamp",       label: "Visa Stamp" },
   { value: "insurance",        label: "Insurance" },
   { value: "medical",          label: "Medical" },
   { value: "quota_slot",       label: "Quota Slot" },
@@ -3503,7 +3485,7 @@ const ReportPreview = ({ data }) => {
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["Emp ID","Name","Passport No.","Nationality","Passport","Visa Stamp","Insurance","WPF","Medical"].map(h => (
+                    {["Emp ID","Name","Passport No.","Nationality","Passport","Insurance","WPF","Medical"].map(h => (
                       <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -3677,7 +3659,7 @@ const ReportPreview = ({ data }) => {
 
   if (data.type === "missing") {
     const { alerts } = data;
-    const ALL_FIELDS = ["Passport","Visa Stamp","Insurance","Work Permit Fee","Medical"];
+    const ALL_FIELDS = ["Passport","Insurance","Work Permit Fee","Medical"];
     return (
       <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, background: "#f0f9ff" }}>
@@ -3687,7 +3669,7 @@ const ReportPreview = ({ data }) => {
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
           <thead>
             <tr style={{ background: "#f8fafc" }}>
-              {["Employer","Site","Emp ID","Name","Passport","Visa Stamp","Insurance","Work Permit Fee","Medical","Missing Count"].map(h => (
+              {["Employer","Site","Emp ID","Name","Passport","Insurance","Work Permit Fee","Medical","Missing Count"].map(h => (
                 <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -3710,8 +3692,8 @@ const ReportPreview = ({ data }) => {
                   );
                 })}
                 <td style={{ padding: "9px 12px" }}>
-                  <span style={{ fontFamily: C.mono, fontWeight: 700, color: row.missing_fields.length === 5 ? "#dc2626" : row.missing_fields.length >= 3 ? "#c2410c" : "#a16207" }}>
-                    {row.missing_fields.length}/5
+                  <span style={{ fontFamily: C.mono, fontWeight: 700, color: row.missing_fields.length === 4 ? "#dc2626" : row.missing_fields.length >= 3 ? "#c2410c" : "#a16207" }}>
+                    {row.missing_fields.length}/4
                   </span>
                 </td>
               </tr>
@@ -3950,6 +3932,43 @@ const SettingsTab = () => {
   const [loading, setLoading]         = useState(false);
   const [message, setMessage]         = useState(null); // { type: "success"|"error", text }
 
+  // Invoice branding state (persisted in localStorage)
+  const [coName,    setCoName]    = useState(() => localStorage.getItem("inv_co_name")    || "");
+  const [coAddress, setCoAddress] = useState(() => localStorage.getItem("inv_co_address") || "");
+  const [coPhone,   setCoPhone]   = useState(() => localStorage.getItem("inv_co_phone")   || "");
+  const [coEmail,   setCoEmail]   = useState(() => localStorage.getItem("inv_co_email")   || "");
+  const [coReg,     setCoReg]     = useState(() => localStorage.getItem("inv_co_reg")     || "");
+  const [coLogo,    setCoLogo]    = useState(() => localStorage.getItem("inv_co_logo")    || "");
+  const [logoW,     setLogoW]     = useState(() => Number(localStorage.getItem("inv_logo_w"))  || 28);
+  const [logoH,     setLogoH]     = useState(() => Number(localStorage.getItem("inv_logo_h"))  || 20);
+  const [stamp,     setStamp]     = useState(() => localStorage.getItem("inv_stamp")      || "");
+  const [stampW,    setStampW]    = useState(() => Number(localStorage.getItem("inv_stamp_w")) || 30);
+  const [stampH,    setStampH]    = useState(() => Number(localStorage.getItem("inv_stamp_h")) || 30);
+  const [sig,       setSig]       = useState(() => localStorage.getItem("inv_sig")        || "");
+  const [brandSaved, setBrandSaved] = useState(false);
+
+  const handleImgUpload = (key, setter) => e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { localStorage.setItem(key, ev.target.result); setter(ev.target.result); };
+    reader.readAsDataURL(file);
+  };
+  const clearImg = (key, setter) => { localStorage.removeItem(key); setter(""); };
+  const saveBranding = () => {
+    localStorage.setItem("inv_co_name",    coName);
+    localStorage.setItem("inv_co_address", coAddress);
+    localStorage.setItem("inv_co_phone",   coPhone);
+    localStorage.setItem("inv_co_email",   coEmail);
+    localStorage.setItem("inv_co_reg",     coReg);
+    localStorage.setItem("inv_logo_w",     String(logoW));
+    localStorage.setItem("inv_logo_h",     String(logoH));
+    localStorage.setItem("inv_stamp_w",    String(stampW));
+    localStorage.setItem("inv_stamp_h",    String(stampH));
+    setBrandSaved(true);
+    setTimeout(() => setBrandSaved(false), 2500);
+  };
+
   const showMsg = (type, text) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
@@ -4017,6 +4036,145 @@ const SettingsTab = () => {
               <div style={{ color: C.text, fontSize: 30, fontWeight: 800, fontFamily: C.mono, lineHeight: 1 }}>{value ?? "—"}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Invoice Branding */}
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 700 }}>Invoice Branding</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 2 }}>Company details, logo, stamp and signature printed on every generated invoice</div>
+        </div>
+        <div style={{ padding: "22px" }}>
+
+          {/* ── Company Details ── */}
+          {(() => {
+            const fld = { fontFamily: C.sans, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text, outline: "none", width: "100%", boxSizing: "border-box" };
+            const lbl = { display: "block", fontFamily: C.sans, fontSize: 11, fontWeight: 600, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 };
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 14, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>Company Details</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                  <div>
+                    <label style={lbl}>Company Name</label>
+                    <input value={coName} onChange={e => setCoName(e.target.value)} placeholder="e.g. Gulf Manpower Services LLC" style={fld} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Registration / License No.</label>
+                    <input value={coReg} onChange={e => setCoReg(e.target.value)} placeholder="e.g. CR-2019-00451" style={fld} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Phone</label>
+                    <input value={coPhone} onChange={e => setCoPhone(e.target.value)} placeholder="e.g. +960 330 1234" style={fld} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Email</label>
+                    <input value={coEmail} onChange={e => setCoEmail(e.target.value)} placeholder="e.g. accounts@company.com" style={fld} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={lbl}>Address</label>
+                  <textarea value={coAddress} onChange={e => setCoAddress(e.target.value)} rows={2}
+                    placeholder="e.g. 4th Floor, Orchid Tower, Male', Maldives"
+                    style={{ ...fld, resize: "vertical" }} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button onClick={saveBranding} style={{ background: brandSaved ? "#16a34a" : C.accent, color: "#fff", border: "none", padding: "9px 28px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+                    {brandSaved ? "Saved!" : "Save All"}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Images ── */}
+          <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 14, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>Images</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+
+            {/* Logo */}
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "10px 14px", background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 600, color: C.text }}>Company Logo</div>
+                <div style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted, marginTop: 2 }}>Top-left of invoice</div>
+              </div>
+              <div style={{ padding: 14 }}>
+                {coLogo
+                  ? <img src={coLogo} alt="Logo" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain", borderRadius: 6, border: `1px solid ${C.border}`, display: "block", marginBottom: 10 }} />
+                  : <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center", background: C.pageBg, borderRadius: 6, border: `1px dashed ${C.border}`, marginBottom: 10 }}><span style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted }}>No image</span></div>
+                }
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                  {[["Width (mm)", logoW, setLogoW, "inv_logo_w"], ["Height (mm)", logoH, setLogoH, "inv_logo_h"]].map(([lbl, val, set, k]) => (
+                    <div key={k}>
+                      <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textSub, marginBottom: 3 }}>{lbl}</div>
+                      <input type="number" value={val} min={5} max={80}
+                        onChange={e => { set(Number(e.target.value)); localStorage.setItem(k, e.target.value); }}
+                        style={{ width: "100%", fontFamily: C.sans, fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ flex: 1, background: C.accent, color: "#fff", padding: "6px 0", borderRadius: 7, cursor: "pointer", textAlign: "center", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>
+                    {coLogo ? "Replace" : "Upload"}
+                    <input type="file" accept="image/*" onChange={handleImgUpload("inv_co_logo", setCoLogo)} style={{ display: "none" }} />
+                  </label>
+                  {coLogo && <button onClick={() => clearImg("inv_co_logo", setCoLogo)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Clear</button>}
+                </div>
+              </div>
+            </div>
+
+            {/* Stamp */}
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "10px 14px", background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 600, color: C.text }}>Company Stamp</div>
+                <div style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted, marginTop: 2 }}>Bottom-right of invoice</div>
+              </div>
+              <div style={{ padding: 14 }}>
+                {stamp
+                  ? <img src={stamp} alt="Stamp" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain", borderRadius: 6, border: `1px solid ${C.border}`, display: "block", marginBottom: 10 }} />
+                  : <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center", background: C.pageBg, borderRadius: 6, border: `1px dashed ${C.border}`, marginBottom: 10 }}><span style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted }}>No image</span></div>
+                }
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                  {[["Width (mm)", stampW, setStampW, "inv_stamp_w"], ["Height (mm)", stampH, setStampH, "inv_stamp_h"]].map(([lbl, val, set, k]) => (
+                    <div key={k}>
+                      <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textSub, marginBottom: 3 }}>{lbl}</div>
+                      <input type="number" value={val} min={5} max={80}
+                        onChange={e => { set(Number(e.target.value)); localStorage.setItem(k, e.target.value); }}
+                        style={{ width: "100%", fontFamily: C.sans, fontSize: 12, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ flex: 1, background: C.accent, color: "#fff", padding: "6px 0", borderRadius: 7, cursor: "pointer", textAlign: "center", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>
+                    {stamp ? "Replace" : "Upload"}
+                    <input type="file" accept="image/*" onChange={handleImgUpload("inv_stamp", setStamp)} style={{ display: "none" }} />
+                  </label>
+                  {stamp && <button onClick={() => clearImg("inv_stamp", setStamp)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Clear</button>}
+                </div>
+              </div>
+            </div>
+
+            {/* Signature */}
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "10px 14px", background: C.pageBg, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 600, color: C.text }}>Signature</div>
+                <div style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted, marginTop: 2 }}>Bottom-left of invoice</div>
+              </div>
+              <div style={{ padding: 14 }}>
+                {sig
+                  ? <img src={sig} alt="Signature" style={{ maxWidth: "100%", maxHeight: 80, objectFit: "contain", borderRadius: 6, border: `1px solid ${C.border}`, display: "block", marginBottom: 10 }} />
+                  : <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center", background: C.pageBg, borderRadius: 6, border: `1px dashed ${C.border}`, marginBottom: 10 }}><span style={{ fontFamily: C.sans, fontSize: 11, color: C.textMuted }}>No image</span></div>
+                }
+                <div style={{ display: "flex", gap: 8 }}>
+                  <label style={{ flex: 1, background: C.accent, color: "#fff", padding: "6px 0", borderRadius: 7, cursor: "pointer", textAlign: "center", fontFamily: C.sans, fontSize: 12, fontWeight: 600 }}>
+                    {sig ? "Replace" : "Upload"}
+                    <input type="file" accept="image/*" onChange={handleImgUpload("inv_sig", setSig)} style={{ display: "none" }} />
+                  </label>
+                  {sig && <button onClick={() => clearImg("inv_sig", setSig)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "6px 12px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>Clear</button>}
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 
@@ -4101,6 +4259,913 @@ const SettingsTab = () => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ── Invoice Tab ────────────────────────────────────────────
+const InvoiceTab = ({ isAdmin }) => {
+  const { data: employers } = useFetch(`${API}/employers/`);
+  const [employerId, setEmployerId]           = useState("");
+  const [employees, setEmployees]             = useState([]);
+  const [loadingEmps, setLoadingEmps]         = useState(false);
+  const [invoiceType, setInvoiceType]         = useState("wpf");    // "wpf" | "insurance" | "quota" | "combined"
+  const [combineWpf, setCombineWpf]           = useState(true);
+  const [combineInsurance, setCombineInsurance] = useState(true);
+  const [combineQuota, setCombineQuota]       = useState(true);
+  const [rate, setRate]                       = useState(350);
+  const [months, setMonths]                   = useState(3);
+  const [quotaMode, setQuotaMode]             = useState("annual"); // "annual" | "monthly"
+  const [quotaMonths, setQuotaMonths]         = useState(1);
+  const [quotaFirstMonth, setQuotaFirstMonth] = useState(true);
+  const [includeAgencyFee, setIncludeAgencyFee] = useState(false);
+  const [agencyFee, setAgencyFee]             = useState("");
+  const [invoiceNumber, setInvoiceNumber]     = useState(() => {
+    const d = new Date();
+    const ym = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}`;
+    const lastSeq = Number(localStorage.getItem(`inv_seq_${ym}`) || 0);
+    return `INV-${ym}-${String(lastSeq + 1).padStart(3,"0")}`;
+  });
+  const [invoiceDate, setInvoiceDate]         = useState(new Date().toISOString().split("T")[0]);
+  const [notes, setNotes]                     = useState("");
+  const [selectedIds, setSelectedIds]         = useState(new Set());
+  const [search, setSearch]                   = useState("");
+  const [history, setHistory]                 = useState(() => {
+    try { return JSON.parse(localStorage.getItem("inv_history") || "[]"); } catch { return []; }
+  });
+  const [invoiceSubTab, setInvoiceSubTab]     = useState("generate");
+  const [histSearch, setHistSearch]           = useState("");
+  const [histStatus, setHistStatus]           = useState("all");
+  const [histType, setHistType]               = useState("all");
+  const [histPage, setHistPage]               = useState(1);
+  const HIST_PER_PAGE = 15;
+
+  useEffect(() => {
+    if (!employerId) { setEmployees([]); setSelectedIds(new Set()); setSearch(""); return; }
+    setLoadingEmps(true);
+    apiFetch(`${API}/employees/?limit=500`)
+      .then(r => r.json())
+      .then(data => {
+        const filtered = (Array.isArray(data) ? data : [])
+          .filter(e => String(e.employer_id) === String(employerId) && !e.resigned);
+        setEmployees(filtered);
+        setSelectedIds(new Set());
+      })
+      .catch(() => setEmployees([]))
+      .finally(() => setLoadingEmps(false));
+  }, [employerId]);
+
+  const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+
+  function monthsOverdue(expiryStr) {
+    const exp = new Date(expiryStr); exp.setHours(0,0,0,0);
+    if (exp >= todayMs) return 0;
+    let m = (todayMs.getFullYear() - exp.getFullYear()) * 12 + (todayMs.getMonth() - exp.getMonth());
+    if (todayMs.getDate() < exp.getDate()) m = Math.max(0, m - 1);
+    return m;
+  }
+
+  function fmtDate(d) {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${String(d.getDate()).padStart(2,"0")} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function coveragePeriod(expiryStr, numMonths) {
+    const start = new Date(expiryStr);
+    const end   = new Date(expiryStr);
+    end.setMonth(end.getMonth() + numMonths);
+    return `${fmtDate(start)} - ${fmtDate(end)}`;
+  }
+
+  const visibleEmployees = employees.filter(e =>
+    !search.trim() || e.full_name.toLowerCase().includes(search.trim().toLowerCase())
+  );
+  const allVisibleSelected = visibleEmployees.length > 0 && visibleEmployees.every(e => selectedIds.has(e.id));
+
+  const toggleAll = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visibleEmployees.forEach(e => next.delete(e.id));
+      else visibleEmployees.forEach(e => next.add(e.id));
+      return next;
+    });
+  };
+  const toggleOne = id => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const selectedEmployees   = employees.filter(e => selectedIds.has(e.id));
+  const selectedEmployer    = (employers || []).find(e => String(e.id) === String(employerId));
+  const quotaPerEmp = (() => {
+    if (quotaMode === "annual") return 2000;
+    if (quotaMonths <= 0) return 0;
+    return quotaFirstMonth ? (174 + (quotaMonths - 1) * 166) : (quotaMonths * 166);
+  })();
+  const perEmp = (() => {
+    if (invoiceType === "wpf")       return months * rate;
+    if (invoiceType === "insurance") return 850;
+    if (invoiceType === "quota")     return quotaPerEmp;
+    if (invoiceType === "combined")  return (combineWpf ? months * rate : 0) + (combineInsurance ? 850 : 0) + (combineQuota ? quotaPerEmp : 0);
+    return 0;
+  })();
+  const subtotal     = selectedEmployees.length * perEmp;
+  const agencyFeeAmt = includeAgencyFee ? (parseFloat(agencyFee) || 0) : 0;
+  const grandTotal   = subtotal + agencyFeeAmt;
+
+  const generatePDF = () => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const W = 210, M = 18;
+
+    // Read branding from localStorage
+    const coName    = localStorage.getItem("inv_co_name")    || "";
+    const coAddress = localStorage.getItem("inv_co_address") || "";
+    const coPhone   = localStorage.getItem("inv_co_phone")   || "";
+    const coEmail   = localStorage.getItem("inv_co_email")   || "";
+    const coReg     = localStorage.getItem("inv_co_reg")     || "";
+    const coLogo    = localStorage.getItem("inv_co_logo")    || "";
+    const logoW     = Number(localStorage.getItem("inv_logo_w"))  || 28;
+    const logoH     = Number(localStorage.getItem("inv_logo_h"))  || 20;
+    const stamp     = localStorage.getItem("inv_stamp")      || "";
+    const stampW    = Number(localStorage.getItem("inv_stamp_w")) || 30;
+    const stampH    = Number(localStorage.getItem("inv_stamp_h")) || 30;
+    const sig       = localStorage.getItem("inv_sig")        || "";
+
+    // ── Header area ──────────────────────────────────────
+    let y = M;
+
+    if (coLogo) {
+      try {
+        const fmt = coLogo.includes("png") ? "PNG" : "JPEG";
+        doc.addImage(coLogo, fmt, M, y, logoW, logoH);
+      } catch {}
+    }
+
+    const infoX = coLogo ? M + logoW + 4 : M;
+    let infoY = y + 4;
+    if (coName) {
+      doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(15,23,42);
+      doc.text(coName, infoX, infoY); infoY += 6;
+    }
+    doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
+    if (coAddress) { doc.text(coAddress, infoX, infoY); infoY += 5; }
+    const contactLine = [coPhone, coEmail].filter(Boolean).join("   |   ");
+    if (contactLine) { doc.text(contactLine, infoX, infoY); infoY += 5; }
+    if (coReg) { doc.text(`Reg: ${coReg}`, infoX, infoY); infoY += 5; }
+
+    doc.setFontSize(26); doc.setFont("helvetica","bold"); doc.setTextColor(15,23,42);
+    doc.text("INVOICE", W - M, y + 8, { align: "right" });
+
+    const metaY = y + 16;
+    doc.setFontSize(8); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
+    doc.text("Invoice No.", W - M - 42, metaY);
+    doc.text("Date",        W - M - 42, metaY + 6);
+    doc.text("Currency",    W - M - 42, metaY + 12);
+    doc.setTextColor(15,23,42); doc.setFont("helvetica","bold");
+    doc.text(invoiceNumber, W - M, metaY,      { align: "right" });
+    doc.text(invoiceDate,   W - M, metaY + 6,  { align: "right" });
+    doc.text("MVR",         W - M, metaY + 12, { align: "right" });
+
+    y = Math.max(infoY + 4, metaY + 18);
+
+    doc.setDrawColor(226,232,240); doc.setLineWidth(0.4);
+    doc.line(M, y, W - M, y); y += 8;
+
+    // ── Bill To ──────────────────────────────────────────
+    doc.setFontSize(7); doc.setFont("helvetica","bold"); doc.setTextColor(100,116,139);
+    doc.text("BILL TO", M, y); y += 5;
+    doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(15,23,42);
+    doc.text(selectedEmployer?.name || "—", M, y); y += 6;
+    doc.setFontSize(8); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
+    if (invoiceType === "wpf") {
+      doc.text(`Rate: MVR ${Number(rate).toFixed(2)} / employee / month   |   Coverage: ${months} month${months>1?"s":""} from each employee's WPF expiry date`, M, y);
+    } else if (invoiceType === "insurance") {
+      doc.text("Annual insurance fee: MVR 850.00 per employee", M, y);
+    } else if (invoiceType === "combined") {
+      const parts = [combineWpf && "WPF", combineInsurance && "Insurance", combineQuota && "Quota Slot"].filter(Boolean);
+      doc.text(`Combined invoice — ${parts.join(" + ")}   |   ${selectedIds.size} employee${selectedIds.size !== 1 ? "s" : ""}`, M, y);
+    } else if (quotaMode === "annual") {
+      doc.text("Annual quota slot fee: MVR 2,000.00 per slot", M, y);
+    } else {
+      const modeDesc = quotaFirstMonth
+        ? `1st month MVR 174.00${quotaMonths > 1 ? ` + ${quotaMonths - 1} x MVR 166.00` : ""}`
+        : `${quotaMonths} x MVR 166.00`;
+      doc.text(`Monthly quota slot fee: ${quotaMonths} month${quotaMonths>1?"s":""} (${modeDesc})`, M, y);
+    }
+    y += 10;
+
+    // ── Employee table(s) ─────────────────────────────────
+    // Total printable width = 174mm (210 - 18 - 18)
+    // Combined sub-table columns: # (10) | Name (100) | Middle (40) | Amount (24) = 174
+    const subTableStyles = { fontSize: 8, cellPadding: 3 };
+    const subHeadStyles  = { fillColor: [15,23,42], textColor: 255, fontStyle: "bold", fontSize: 8 };
+    const subAltStyles   = { fillColor: [248,250,252] };
+    const drawSectionLabel = (label) => {
+      doc.setFontSize(8); doc.setFont("helvetica","bold"); doc.setTextColor(100,116,139);
+      doc.text(label, M, y); y += 4;
+    };
+
+    let tableHead, tableBody, colStyles;
+
+    if (invoiceType === "wpf") {
+      // 7 cols: 8+42+24+22+50+10+18 = 174
+      tableHead = [["#", "Employee Name", "WP Number", "WPF Expiry", "Coverage Period", "Mo.", "Amount (MVR)"]];
+      tableBody = selectedEmployees.map((emp, i) => [
+        String(i + 1),
+        emp.full_name,
+        emp.work_permit_number || "—",
+        emp.work_permit_fee_expiry || "—",
+        emp.work_permit_fee_expiry ? coveragePeriod(emp.work_permit_fee_expiry, months) : "—",
+        String(months),
+        (months * rate).toFixed(2),
+      ]);
+      colStyles = {
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 22, halign: "center" },
+        4: { cellWidth: 50 },
+        5: { cellWidth: 10, halign: "center" },
+        6: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+      };
+    } else if (invoiceType === "insurance") {
+      // 6 cols: 10+42+26+26+52+18 = 174
+      tableHead = [["#", "Employee Name", "WP Number", "Insurance Expiry", "Coverage Period", "Amount (MVR)"]];
+      tableBody = selectedEmployees.map((emp, i) => [
+        String(i + 1),
+        emp.full_name,
+        emp.work_permit_number || "—",
+        emp.insurance_expiry || "—",
+        emp.insurance_expiry ? coveragePeriod(emp.insurance_expiry, 12) : "—",
+        (850).toFixed(2),
+      ]);
+      colStyles = {
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 26, halign: "center" },
+        4: { cellWidth: 52 },
+        5: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+      };
+    } else {
+      // Quota — 6 cols: 8+44+26+30+48+18 = 174
+      const modeLabel = quotaMode === "annual"
+        ? "Annual"
+        : `${quotaMonths} mo.${quotaFirstMonth ? " (1st incl.)" : ""}`;
+      tableHead = [["#", "Employee Name", "WP Number", "Quota Slot No.", "Payment Mode", "Amount (MVR)"]];
+      tableBody = selectedEmployees.map((emp, i) => [
+        String(i + 1),
+        emp.full_name,
+        emp.work_permit_number || "—",
+        emp.quota_slot_number || "—",
+        modeLabel,
+        perEmp.toFixed(2),
+      ]);
+      colStyles = {
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 44 },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 46 },
+        5: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+      };
+    }
+
+    if (invoiceType === "combined") {
+      // ── Combined: draw one sub-table per active type ──
+      const n = selectedIds.size;
+      let secIndex = 0;
+      const sections = [
+        combineWpf       && "wpf",
+        combineInsurance && "insurance",
+        combineQuota     && "quota",
+      ].filter(Boolean);
+
+      for (const sec of sections) {
+        secIndex++;
+        const letter = String.fromCharCode(64 + secIndex); // A, B, C
+        if (sec === "wpf") {
+          drawSectionLabel(`SECTION ${letter}  —  WORK PERMIT FEE`);
+          autoTable(doc, {
+            startY: y,
+            head: [["#", "Employee Name", "WPF Expiry", "Mo.", "Amount (MVR)"]],
+            body: selectedEmployees.map((emp, i) => [
+              String(i + 1), emp.full_name,
+              emp.work_permit_fee_expiry || "—", String(months),
+              (months * rate).toFixed(2),
+            ]),
+            styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
+            columnStyles: {
+              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 100 },
+              2: { cellWidth: 26, halign: "center" }, 3: { cellWidth: 14, halign: "center" },
+              4: { cellWidth: 24, halign: "right", fontStyle: "bold" },
+            },
+            margin: { left: M, right: M },
+          });
+        } else if (sec === "insurance") {
+          drawSectionLabel(`SECTION ${letter}  —  INSURANCE`);
+          autoTable(doc, {
+            startY: y,
+            head: [["#", "Employee Name", "Insurance Expiry", "Amount (MVR)"]],
+            body: selectedEmployees.map((emp, i) => [
+              String(i + 1), emp.full_name,
+              emp.insurance_expiry || "—", (850).toFixed(2),
+            ]),
+            styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
+            columnStyles: {
+              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 120 },
+              2: { cellWidth: 26, halign: "center" },
+              3: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+            },
+            margin: { left: M, right: M },
+          });
+        } else {
+          const modeLabel = quotaMode === "annual" ? "Annual" : `${quotaMonths} mo${quotaFirstMonth ? " (1st incl.)" : ""}`;
+          drawSectionLabel(`SECTION ${letter}  —  QUOTA SLOT FEE`);
+          autoTable(doc, {
+            startY: y,
+            head: [["#", "Employee Name", "Quota Slot No.", "Mode", "Amount (MVR)"]],
+            body: selectedEmployees.map((emp, i) => [
+              String(i + 1), emp.full_name,
+              emp.quota_slot_number || "—", modeLabel, quotaPerEmp.toFixed(2),
+            ]),
+            styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
+            columnStyles: {
+              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 86 },
+              2: { cellWidth: 30 }, 3: { cellWidth: 30 },
+              4: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+            },
+            margin: { left: M, right: M },
+          });
+        }
+        y = doc.lastAutoTable.finalY + (secIndex < sections.length ? 6 : 8);
+      }
+    } else {
+      autoTable(doc, {
+        startY: y,
+        head: tableHead,
+        body: tableBody,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold", fontSize: 8 },
+        columnStyles: colStyles,
+        alternateRowStyles: { fillColor: [248,250,252] },
+        margin: { left: M, right: M },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Totals ───────────────────────────────────────────
+    const tX = W - M - 80, tW = 80;
+    const drawRow = (label, value, bg, textCol, bold, h) => {
+      doc.setFillColor(...bg);
+      doc.rect(tX, y, tW, h, "F");
+      doc.setFontSize(bold ? 9.5 : 8.5);
+      doc.setFont("helvetica", bold ? "bold" : "normal");
+      doc.setTextColor(...textCol);
+      doc.text(label, tX + 4, y + h * 0.62);
+      doc.text(value, W - M - 2, y + h * 0.62, { align: "right" });
+      y += h + 1;
+    };
+
+    const n = selectedIds.size;
+    if (invoiceType === "combined") {
+      if (combineWpf)       drawRow(`WPF: ${n} emp x ${months}mo x MVR ${rate}`, `MVR ${(n * months * rate).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+      if (combineInsurance) drawRow(`Insurance: ${n} emp x MVR 850`, `MVR ${(n * 850).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+      if (combineQuota)     drawRow(`Quota: ${n} x MVR ${quotaPerEmp.toFixed(2)}`, `MVR ${(n * quotaPerEmp).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+    } else {
+      let subtotalLabel;
+      if (invoiceType === "wpf") subtotalLabel = `WPF: ${n} emp x ${months} mo x MVR ${rate}`;
+      else if (invoiceType === "insurance") subtotalLabel = `Insurance: ${n} emp x MVR 850`;
+      else if (quotaMode === "annual") subtotalLabel = `Quota Slots: ${n} x MVR 2,000`;
+      else subtotalLabel = `Quota Slots: ${n} x MVR ${perEmp.toFixed(2)} (${quotaMonths} mo)`;
+      drawRow(subtotalLabel, `MVR ${subtotal.toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+    }
+    if (includeAgencyFee && agencyFeeAmt > 0)
+      drawRow("Agency Fee", `MVR ${agencyFeeAmt.toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+    drawRow("TOTAL DUE", `MVR ${grandTotal.toFixed(2)}`, [15,23,42], [255,255,255], true, 11);
+
+    y += 8;
+
+    // ── Signature & Stamp (only render if uploaded) ──────
+    const sigStampY = y;
+    const sigImgW = 52, sigImgH = 20;
+
+    if (sig) {
+      try {
+        const fmt = sig.includes("png") ? "PNG" : "JPEG";
+        doc.addImage(sig, fmt, M, sigStampY, sigImgW, sigImgH);
+      } catch {}
+      doc.setDrawColor(100,116,139); doc.setLineWidth(0.3);
+      doc.line(M, sigStampY + sigImgH + 1, M + sigImgW, sigStampY + sigImgH + 1);
+      doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
+      doc.text("Authorized Signature", M, sigStampY + sigImgH + 5);
+    }
+
+    if (stamp) {
+      try {
+        const fmt = stamp.includes("png") ? "PNG" : "JPEG";
+        doc.addImage(stamp, fmt, W - M - stampW, sigStampY, stampW, stampH);
+      } catch {}
+      doc.setDrawColor(100,116,139); doc.setLineWidth(0.3);
+      doc.line(W - M - stampW, sigStampY + Math.max(sigImgH, stampH) + 1, W - M, sigStampY + Math.max(sigImgH, stampH) + 1);
+      doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
+      doc.text("Company Stamp", W - M - stampW, sigStampY + Math.max(sigImgH, stampH) + 5);
+    }
+
+    y = (sig || stamp) ? sigStampY + Math.max(sig ? sigImgH : 0, stamp ? stampH : 0) + 12 : sigStampY;
+
+    // ── Notes ────────────────────────────────────────────
+    if (notes.trim()) {
+      doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 6;
+      doc.setFontSize(7); doc.setFont("helvetica","bold"); doc.setTextColor(100,116,139);
+      doc.text("NOTES", M, y); y += 4;
+      doc.setFont("helvetica","normal"); doc.setTextColor(15,23,42); doc.setFontSize(8);
+      doc.text(doc.splitTextToSize(notes, W - 2 * M), M, y);
+    }
+
+    // ── Footer ───────────────────────────────────────────
+    doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M, 283, W - M, 283);
+    doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(148,163,184);
+    doc.text("Generated by DocGuard — Expatriate Compliance Management System", W / 2, 288, { align: "center" });
+
+    doc.save(`Invoice_${invoiceNumber}_${(selectedEmployer?.name || "employer").replace(/\s+/g,"_")}.pdf`);
+
+    // Save to history
+    const record = {
+      id: Date.now(),
+      number: invoiceNumber,
+      date: invoiceDate,
+      employerName: selectedEmployer?.name || "—",
+      invoiceType,
+      employeeCount: selectedIds.size,
+      grandTotal,
+      status: "pending",
+    };
+    const newHistory = [record, ...history];
+    setHistory(newHistory);
+    localStorage.setItem("inv_history", JSON.stringify(newHistory));
+
+    // Advance invoice number sequence
+    const _d = new Date();
+    const _ym = `${_d.getFullYear()}${String(_d.getMonth()+1).padStart(2,"0")}`;
+    const _key = `inv_seq_${_ym}`;
+    const _usedSeq = Number(localStorage.getItem(_key) || 0) + 1;
+    localStorage.setItem(_key, String(_usedSeq));
+    setInvoiceNumber(`INV-${_ym}-${String(_usedSeq + 1).padStart(3,"0")}`);
+  };
+
+  const inSt = { fontFamily: C.sans, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text, outline: "none" };
+  const lbSt = { fontFamily: C.sans, fontSize: 11, fontWeight: 600, color: C.textSub, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" };
+
+  return (
+    <div style={{ maxWidth: 1400, margin: "0 auto" }}>
+
+      {/* ── Sub-tab toggle ── */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 4, width: "fit-content" }}>
+        {[["generate","New Invoice"],["history","History"]].map(([key, label]) => (
+          <button key={key} onClick={() => setInvoiceSubTab(key)} style={{
+            fontFamily: C.sans, fontSize: 13, fontWeight: 600, padding: "7px 20px", borderRadius: 7,
+            border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
+            background: invoiceSubTab === key ? C.accent : "transparent",
+            color: invoiceSubTab === key ? "#fff" : C.textSub,
+          }}>
+            {label}
+            {key === "history" && history.length > 0 && (
+              <span style={{ background: invoiceSubTab === "history" ? "rgba(255,255,255,0.3)" : C.accent, color: "#fff", borderRadius: 8, padding: "0 6px", fontSize: 10, fontWeight: 700, lineHeight: "16px" }}>
+                {history.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ══ NEW INVOICE ══ */}
+      {invoiceSubTab === "generate" && (
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+
+          {/* Left column: config + totals/generate */}
+          <div style={{ width: 360, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Config card */}
+            <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px" }}>
+              <div style={{ fontFamily: C.sans, fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 }}>Configure Invoice</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <label style={lbSt}>Employer</label>
+                  <select value={employerId} onChange={e => setEmployerId(e.target.value)} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                    <option value="">— Select Employer —</option>
+                    {(employers || []).map(e => <option key={e.id} value={String(e.id)}>{e.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lbSt}>Invoice Type</label>
+                  <select value={invoiceType} onChange={e => { setInvoiceType(e.target.value); setSelectedIds(new Set()); }} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                    <option value="wpf">Work Permit Fee</option>
+                    <option value="insurance">Insurance</option>
+                    <option value="quota">Quota Slot Fee</option>
+                    <option value="combined">Combined (All Types)</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbSt}>Invoice No.</label>
+                    <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbSt}>Date</label>
+                    <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                </div>
+                {invoiceType === "wpf" && (
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbSt}>Rate / Month</label>
+                      <input type="number" value={rate} onChange={e => setRate(Number(e.target.value))} min={1} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbSt}>Months</label>
+                      <select value={months} onChange={e => setMonths(Number(e.target.value))} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                        {[1,2,3,4,5,6,9,12].map(m => <option key={m} value={m}>{m} mo</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {invoiceType === "quota" && <>
+                  <div>
+                    <label style={lbSt}>Payment Mode</label>
+                    <select value={quotaMode} onChange={e => setQuotaMode(e.target.value)} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                      <option value="annual">Annual (MVR 2,000)</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  {quotaMode === "monthly" && (
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={lbSt}>Months</label>
+                        <select value={quotaMonths} onChange={e => setQuotaMonths(Number(e.target.value))} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                          {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{m} month{m>1?"s":""}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ paddingBottom: 9 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12, color: C.text, userSelect: "none", whiteSpace: "nowrap" }}>
+                          <input type="checkbox" checked={quotaFirstMonth} onChange={e => setQuotaFirstMonth(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.accent }} />
+                          1st month (174)
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </>}
+                {invoiceType === "combined" && (
+                  <div style={{ background: C.pageBg, borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                    <div style={{ fontFamily: C.sans, fontSize: 11, fontWeight: 600, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Include Fee Types</div>
+                    {[
+                      ["wpf", "Work Permit Fee", combineWpf, setCombineWpf],
+                      ["insurance", "Insurance (MVR 850/yr)", combineInsurance, setCombineInsurance],
+                      ["quota", "Quota Slot Fee", combineQuota, setCombineQuota],
+                    ].map(([key, label, checked, setter]) => (
+                      <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, color: C.text, userSelect: "none", marginBottom: 8 }}>
+                        <input type="checkbox" checked={checked} onChange={e => setter(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.accent }} />
+                        {label}
+                      </label>
+                    ))}
+                    {combineWpf && (
+                      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ ...lbSt, marginBottom: 4 }}>WPF Rate / Mo.</label>
+                          <input type="number" value={rate} onChange={e => setRate(Number(e.target.value))} min={1} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ ...lbSt, marginBottom: 4 }}>Months</label>
+                          <select value={months} onChange={e => setMonths(Number(e.target.value))} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                            {[1,2,3,4,5,6,9,12].map(m => <option key={m} value={m}>{m} mo</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                    {combineQuota && (
+                      <div style={{ marginTop: 6 }}>
+                        <label style={{ ...lbSt, marginBottom: 4 }}>Quota Mode</label>
+                        <select value={quotaMode} onChange={e => setQuotaMode(e.target.value)} style={{ ...inSt, width: "100%", boxSizing: "border-box", marginBottom: 8 }}>
+                          <option value="annual">Annual (MVR 2,000)</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                        {quotaMode === "monthly" && (
+                          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ ...lbSt, marginBottom: 4 }}>Months</label>
+                              <select value={quotaMonths} onChange={e => setQuotaMonths(Number(e.target.value))} style={{ ...inSt, width: "100%", boxSizing: "border-box" }}>
+                                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{m} month{m>1?"s":""}</option>)}
+                              </select>
+                            </div>
+                            <div style={{ paddingBottom: 9 }}>
+                              <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12, color: C.text, userSelect: "none", whiteSpace: "nowrap" }}>
+                                <input type="checkbox" checked={quotaFirstMonth} onChange={e => setQuotaFirstMonth(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.accent }} />
+                                1st month (174)
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, color: C.text, userSelect: "none", marginBottom: includeAgencyFee ? 8 : 0 }}>
+                    <input type="checkbox" checked={includeAgencyFee} onChange={e => setIncludeAgencyFee(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.accent }} />
+                    Include Agency Fee
+                  </label>
+                  {includeAgencyFee && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: C.sans, fontSize: 13, color: C.textSub }}>MVR</span>
+                      <input type="number" value={agencyFee} onChange={e => setAgencyFee(e.target.value)} placeholder="0.00" min={0} style={{ ...inSt, flex: 1 }} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={lbSt}>Notes (optional)</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                    placeholder="e.g. Payment due within 30 days…"
+                    rows={2} style={{ ...inSt, width: "100%", resize: "vertical", boxSizing: "border-box" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Totals + Generate (appears once employees are selected) */}
+            {selectedIds.size > 0 && (
+              <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px" }}>
+                <div style={{ fontFamily: C.sans, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 14 }}>
+                  Summary — {selectedIds.size} employee{selectedIds.size !== 1 ? "s" : ""}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  {[
+                    ...(invoiceType === "wpf"
+                      ? [["Rate", `MVR ${Number(rate).toFixed(2)} / mo`], ["Months", `${months}`]]
+                      : invoiceType === "insurance"
+                      ? [["Rate", "MVR 850.00 / yr"]]
+                      : invoiceType === "quota"
+                      ? (quotaMode === "annual" ? [["Rate", "MVR 2,000 / yr"]] : [["Months", `${quotaMonths}`], ["Per Slot", `MVR ${quotaPerEmp.toFixed(2)}`]])
+                      : [
+                          ...(combineWpf       ? [["WPF", `${selectedIds.size} x MVR ${(months * rate).toFixed(2)}`]] : []),
+                          ...(combineInsurance ? [["Insurance", `${selectedIds.size} x MVR 850.00`]] : []),
+                          ...(combineQuota     ? [["Quota", `${selectedIds.size} x MVR ${quotaPerEmp.toFixed(2)}`]] : []),
+                        ]),
+                    ["Subtotal", `MVR ${subtotal.toFixed(2)}`],
+                    ...(includeAgencyFee ? [["Agency Fee", `MVR ${agencyFeeAmt.toFixed(2)}`]] : []),
+                  ].map(([lbl, val]) => (
+                    <div key={lbl} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.borderLight}`, fontFamily: C.sans, fontSize: 12 }}>
+                      <span style={{ color: C.textSub }}>{lbl}</span>
+                      <span style={{ fontFamily: C.mono, color: C.text }}>{val}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 4px", marginTop: 6, borderTop: `2px solid ${C.border}`, fontFamily: C.sans, fontSize: 15, fontWeight: 700 }}>
+                    <span style={{ color: C.text }}>Total Due</span>
+                    <span style={{ fontFamily: C.mono, color: C.accent }}>MVR {grandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+                <button onClick={generatePDF} style={{
+                  width: "100%", background: C.accent, color: "#fff",
+                  border: "none", padding: "11px 0", borderRadius: 9,
+                  cursor: "pointer", fontFamily: C.sans, fontSize: 14, fontWeight: 700,
+                  boxShadow: `0 4px 14px ${C.accent}40`,
+                }}>
+                  ↓ Generate PDF Invoice
+                </button>
+              </div>
+            )}
+          </div>{/* end left column */}
+
+          {/* Right column: employee selection */}
+          {employerId ? (
+            <div style={{ flex: 1, minWidth: 0, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}`, background: C.pageBg, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <span style={{ fontFamily: C.sans, fontSize: 13, fontWeight: 700, color: C.text }}>
+                    {loadingEmps ? "Loading…" : `${employees.length} employee${employees.length !== 1 ? "s" : ""}`}
+                  </span>
+                  {!loadingEmps && employees.length > 0 && (
+                    <span style={{ fontFamily: C.sans, fontSize: 12, color: C.textSub, marginLeft: 10 }}>{selectedIds.size} selected</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {employees.length > 0 && (
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+                      style={{ ...inSt, padding: "5px 10px", fontSize: 12, width: 160 }} />
+                  )}
+                  {visibleEmployees.length > 0 && (
+                    <button onClick={toggleAll} style={{ background: "none", border: `1px solid ${C.border}`, color: C.textSub, padding: "5px 12px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12, whiteSpace: "nowrap" }}>
+                      {allVisibleSelected ? "Deselect All" : "Select All"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {!loadingEmps && employees.length === 0 && (
+                <div style={{ padding: 40, textAlign: "center", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>No employees found for this employer.</div>
+              )}
+              {!loadingEmps && employees.length > 0 && visibleEmployees.length === 0 && (
+                <div style={{ padding: 32, textAlign: "center", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>No employees match "{search}".</div>
+              )}
+              {visibleEmployees.length > 0 && (
+                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 230px)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+                    <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                      <tr style={{ background: "#f8fafc" }}>
+                        <th style={{ padding: "10px 14px", width: 40, borderBottom: `1px solid ${C.border}`, textAlign: "center" }}>
+                          <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} style={{ accentColor: C.accent, cursor: "pointer" }} />
+                        </th>
+                        {(invoiceType === "wpf"
+                          ? ["Employee","WP Number","WPF Expiry","Status","Overdue","Coverage Period","Months","Amount (MVR)"]
+                          : invoiceType === "insurance"
+                          ? ["Employee","WP Number","Insurance Expiry","Coverage Period","Amount (MVR)"]
+                          : invoiceType === "quota"
+                          ? ["Employee","WP Number","Quota Slot No.","Amount (MVR)"]
+                          : ["Employee","WP Number",...(combineWpf?["WPF (MVR)"]:[]),...(combineInsurance?["Insurance (MVR)"]:[]),...(combineQuota?["Quota (MVR)"]:[]),"Total (MVR)"]
+                        ).map(h => (
+                          <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleEmployees.map(emp => {
+                        const isSelected   = selectedIds.has(emp.id);
+                        const hasWpfExpiry = !!emp.work_permit_fee_expiry;
+                        const overdue      = hasWpfExpiry ? monthsOverdue(emp.work_permit_fee_expiry) : null;
+                        const status       = emp.work_permit_fee_status?.status;
+                        const cfg          = STATUS_CONFIG[status];
+                        return (
+                          <tr key={emp.id} onClick={() => toggleOne(emp.id)}
+                            style={{ borderBottom: `1px solid ${C.borderLight}`, background: isSelected ? "#f0f9ff" : "transparent", cursor: "pointer" }}
+                            onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = C.rowHover; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = isSelected ? "#f0f9ff" : "transparent"; }}>
+                            <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleOne(emp.id)}
+                                onClick={e => e.stopPropagation()} style={{ accentColor: C.accent, cursor: "pointer" }} />
+                            </td>
+                            <td style={{ padding: "10px 12px", fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{emp.full_name}</td>
+                            <td style={{ padding: "10px 12px", color: C.textSub, fontFamily: C.mono, fontSize: 11 }}>{emp.work_permit_number || "—"}</td>
+                            {invoiceType === "wpf" && <>
+                              <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.work_permit_fee_expiry || <span style={{ color: C.textMuted }}>—</span>}</td>
+                              <td style={{ padding: "10px 12px" }}>
+                                {status ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: cfg?.bg || "#f8fafc", color: cfg?.color || C.textMuted, fontWeight: 600, fontSize: 10 }}>{cfg?.label || status}</span> : <span style={{ color: C.textMuted }}>—</span>}
+                              </td>
+                              <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 12, fontWeight: 700, color: overdue > 0 ? "#b91c1c" : "#16a34a" }}>
+                                {overdue === null ? <span style={{ color: C.textMuted }}>—</span> : overdue > 0 ? `${overdue} mo` : "Current"}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap" }}>
+                                {hasWpfExpiry ? coveragePeriod(emp.work_permit_fee_expiry, months) : <span style={{ color: C.textMuted }}>—</span>}
+                              </td>
+                              <td style={{ padding: "10px 12px", textAlign: "center", fontFamily: C.mono, color: C.textSub }}>{months}</td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{(months * rate).toFixed(2)}</td>
+                            </>}
+                            {invoiceType === "insurance" && <>
+                              <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.insurance_expiry || <span style={{ color: C.textMuted }}>—</span>}</td>
+                              <td style={{ padding: "10px 12px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap" }}>
+                                {emp.insurance_expiry ? coveragePeriod(emp.insurance_expiry, 12) : <span style={{ color: C.textMuted }}>—</span>}
+                              </td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>850.00</td>
+                            </>}
+                            {invoiceType === "quota" && <>
+                              <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.quota_slot_number || <span style={{ color: C.textMuted }}>—</span>}</td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{perEmp.toFixed(2)}</td>
+                            </>}
+                            {invoiceType === "combined" && <>
+                              {combineWpf       && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{(months * rate).toFixed(2)}</td>}
+                              {combineInsurance && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>850.00</td>}
+                              {combineQuota     && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{quotaPerEmp.toFixed(2)}</td>}
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{perEmp.toFixed(2)}</td>
+                            </>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ flex: 1, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 200 }}>
+              <span style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>Select an employer to load employees</span>
+            </div>
+          )}
+        </div>
+      )}{/* end generate tab */}
+
+      {/* ══ HISTORY TAB ══ */}
+      {invoiceSubTab === "history" && (
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, background: C.pageBg, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <input value={histSearch} onChange={e => { setHistSearch(e.target.value); setHistPage(1); }}
+              placeholder="Search by invoice no. or employer…"
+              style={{ ...inSt, padding: "6px 12px", fontSize: 12, width: 260 }} />
+            <select value={histStatus} onChange={e => { setHistStatus(e.target.value); setHistPage(1); }} style={{ ...inSt, fontSize: 12, padding: "6px 10px" }}>
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+            </select>
+            <select value={histType} onChange={e => { setHistType(e.target.value); setHistPage(1); }} style={{ ...inSt, fontSize: 12, padding: "6px 10px" }}>
+              <option value="all">All Types</option>
+              <option value="wpf">Work Permit Fee</option>
+              <option value="insurance">Insurance</option>
+              <option value="quota">Quota Slot</option>
+              <option value="combined">Combined</option>
+            </select>
+            {isAdmin && (
+              <button onClick={() => { if (window.confirm("Clear all invoice history?")) { setHistory([]); localStorage.removeItem("inv_history"); } }}
+                style={{ marginLeft: "auto", background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>
+                Clear All
+              </button>
+            )}
+          </div>
+          {(() => {
+            const filtered = history.filter(inv => {
+              const q = histSearch.toLowerCase();
+              const matchQ = !q || inv.number.toLowerCase().includes(q) || inv.employerName.toLowerCase().includes(q);
+              const matchS = histStatus === "all" || inv.status === histStatus;
+              const matchT = histType === "all" || inv.invoiceType === histType;
+              return matchQ && matchS && matchT;
+            });
+            const totalPages = Math.max(1, Math.ceil(filtered.length / HIST_PER_PAGE));
+            const page = Math.min(histPage, totalPages);
+            const pageItems = filtered.slice((page - 1) * HIST_PER_PAGE, page * HIST_PER_PAGE);
+            if (filtered.length === 0) return (
+              <div style={{ padding: 40, textAlign: "center", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>
+                {history.length === 0 ? "No invoices generated yet." : "No results match your filters."}
+              </div>
+            );
+            return (
+              <>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Invoice No.","Date","Employer","Type","Employees","Total (MVR)","Status","",""].map(h => (
+                          <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageItems.map(inv => (
+                        <tr key={inv.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                          <td style={{ padding: "10px 14px", fontFamily: C.mono, fontWeight: 700, color: C.text, whiteSpace: "nowrap" }}>{inv.number}</td>
+                          <td style={{ padding: "10px 14px", color: C.textSub, whiteSpace: "nowrap" }}>{inv.date}</td>
+                          <td style={{ padding: "10px 14px", color: C.text, fontWeight: 500 }}>{inv.employerName}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                              background: inv.invoiceType === "wpf" ? "#eff6ff" : inv.invoiceType === "insurance" ? "#f0fdf4" : inv.invoiceType === "quota" ? "#faf5ff" : "#fff7ed",
+                              color:      inv.invoiceType === "wpf" ? "#1d4ed8" : inv.invoiceType === "insurance" ? "#15803d"  : inv.invoiceType === "quota" ? "#7e22ce" : "#c2410c",
+                            }}>
+                              {inv.invoiceType === "wpf" ? "WPF" : inv.invoiceType === "insurance" ? "Insurance" : inv.invoiceType === "quota" ? "Quota" : "Combined"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "center", fontFamily: C.mono, color: C.textSub }}>{inv.employeeCount}</td>
+                          <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{Number(inv.grandTotal).toFixed(2)}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700,
+                              background: inv.status === "paid" ? "#dcfce7" : "#fef3c7",
+                              color:      inv.status === "paid" ? "#15803d" : "#92400e",
+                            }}>
+                              {inv.status === "paid" ? "Paid" : "Pending"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                            <button onClick={() => {
+                              const updated = history.map(r => r.id === inv.id ? { ...r, status: r.status === "paid" ? "pending" : "paid" } : r);
+                              setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+                            }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.textSub, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
+                              Mark {inv.status === "paid" ? "Pending" : "Paid"}
+                            </button>
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <button onClick={() => {
+                              if (window.confirm(`Delete invoice ${inv.number}?`)) {
+                                const updated = history.filter(r => r.id !== inv.id);
+                                setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+                              }
+                            }} style={{ background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {totalPages > 1 && (
+                  <div style={{ padding: "12px 20px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: C.sans, fontSize: 12, color: C.textSub }}>
+                    <span>{filtered.length} record{filtered.length !== 1 ? "s" : ""} — page {page} of {totalPages}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => setHistPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${C.border}`, background: "none", cursor: page === 1 ? "default" : "pointer", color: page === 1 ? C.textMuted : C.text, fontFamily: C.sans, fontSize: 12 }}>Prev</button>
+                      <button onClick={() => setHistPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                        style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${C.border}`, background: "none", cursor: page === totalPages ? "default" : "pointer", color: page === totalPages ? C.textMuted : C.text, fontFamily: C.sans, fontSize: 12 }}>Next</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}{/* end history tab */}
     </div>
   );
 };
@@ -4243,13 +5308,14 @@ export default function App() {
 
       {/* Main content */}
       <div className="dg-main" style={{ padding: "28px 32px" }}>
-        <Tabs tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS", "REPORTS"]} active={tab} onChange={setTab} />
+        <Tabs tabs={["OVERVIEW", "ALERTS", "EMPLOYEES", "EMPLOYERS", "REPORTS", "INVOICES"]} active={tab} onChange={setTab} />
         <div key={tab} style={{ animation: "slideTab 0.18s ease" }}>
           {tab === "OVERVIEW"  && <DashboardTab onNavigate={handleDashNav} />}
           {tab === "ALERTS"    && <AlertsTab key={alertNavKey} initialView={alertNav.view} initialFilter={alertNav.filter} initialDays={alertNav.days} />}
           {tab === "EMPLOYEES" && <EmployeesTab />}
           {tab === "EMPLOYERS" && <EmployersTab />}
           {tab === "REPORTS"   && <ReportsTab />}
+          {tab === "INVOICES"  && <InvoiceTab isAdmin={!!currentUser?.is_admin} />}
         </div>
       </div>
     </div>
