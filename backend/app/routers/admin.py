@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 import random
 
 from app.database import get_db
-from app.models.models import Employer, Site, Employee, AuditLog, User
+from app.models.models import Employer, Site, Employee, AuditLog, AuditLogArchive, User
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -31,6 +31,40 @@ async def get_stats(db: AsyncSession = Depends(get_db), _: User = Depends(_requi
         "audit_logs": audit_logs,
         "users":      users,
     }
+
+
+@router.get("/audit-log-stats")
+async def audit_log_stats(db: AsyncSession = Depends(get_db), _: User = Depends(_require_admin)):
+    """Count active and archived audit logs, and how many are older than 1 year."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    active      = (await db.execute(select(func.count()).select_from(AuditLog))).scalar()
+    archivable  = (await db.execute(select(func.count()).select_from(AuditLog).where(AuditLog.changed_at < cutoff))).scalar()
+    archived    = (await db.execute(select(func.count()).select_from(AuditLogArchive))).scalar()
+    return { "active": active, "archivable": archivable, "archived": archived }
+
+
+@router.post("/archive-audit-logs")
+async def archive_audit_logs(db: AsyncSession = Depends(get_db), _: User = Depends(_require_admin)):
+    """Move audit logs older than 1 year to the archive table."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    old_logs = (await db.execute(
+        select(AuditLog).where(AuditLog.changed_at < cutoff)
+    )).scalars().all()
+
+    if not old_logs:
+        return { "archived": 0, "message": "No logs older than 1 year found." }
+
+    for log in old_logs:
+        db.add(AuditLogArchive(
+            id=log.id, employee_id=log.employee_id,
+            changed_at=log.changed_at, field_name=log.field_name,
+            old_value=log.old_value, new_value=log.new_value,
+            note=log.note, changed_by=log.changed_by,
+        ))
+        await db.delete(log)
+
+    await db.commit()
+    return { "archived": len(old_logs), "message": f"{len(old_logs)} logs archived successfully." }
 
 
 @router.post("/wipe")

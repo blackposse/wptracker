@@ -1845,7 +1845,7 @@ function worstStatus(emp) {
 const PAGE_SIZE = 50;
 
 const EmployeesTab = () => {
-  const { data: employees, loading } = useFetch(`${API}/employees/?limit=500`);
+  const { data: employees, loading } = useFetch(`${API}/employees/`);
   const { data: sites }     = useFetch(`${API}/sites/`);
   const { data: employers } = useFetch(`${API}/employers/`);
   const [showAddForm, setShowAddForm]     = useState(false);
@@ -3790,8 +3790,8 @@ const ReportsTab = () => {
         setReportData({ type: "expiry_by_type", alerts: data.alerts || [], summary: data, docType, docTypeLabel, dateFrom, dateTo });
       } else if (reportType === "compliance" || reportType === "noncompliant") {
         const empUrl = employerId
-          ? `${API}/employees/?employer_id=${employerId}&resigned=false&limit=500`
-          : `${API}/employees/?resigned=false&limit=500`;
+          ? `${API}/employees/?employer_id=${employerId}&resigned=false`
+          : `${API}/employees/?resigned=false`;
         const [empRes, empListRes, siteRes] = await Promise.all([
           apiFetch(empUrl).then(r => r.json()),
           apiFetch(`${API}/employers/`).then(r => r.json()),
@@ -3928,11 +3928,13 @@ const ReportsTab = () => {
 // ── Settings Tab ──────────────────────────────────────────
 const SettingsTab = () => {
   const { data: stats, refetch: refetchStats } = useFetch(`${API}/admin/stats`);
+  const { data: auditStats, refetch: refetchAuditStats } = useFetch(`${API}/admin/audit-log-stats`);
   const [confirmWipe, setConfirmWipe]       = useState(false);
   const [loading, setLoading]               = useState(false);
   const [message, setMessage]               = useState(null); // { type: "success"|"error", text }
-  const [confirmRestore, setConfirmRestore] = useState(null); // backup JSON object pending confirmation
+  const [confirmRestore, setConfirmRestore] = useState(null);
   const [restoreLoading, setRestoreLoading] = useState(false);
+  const [archiving, setArchiving]           = useState(false);
 
   // Invoice branding state (persisted in localStorage)
   const [coName,    setCoName]    = useState(() => localStorage.getItem("inv_co_name")    || "");
@@ -4046,6 +4048,17 @@ const SettingsTab = () => {
       }
     } catch (e) { showMsg("error", e.message); }
     finally { setRestoreLoading(false); setConfirmRestore(null); }
+  };
+
+  const handleArchiveLogs = async () => {
+    setArchiving(true);
+    try {
+      const res = await apiFetch(`${API}/admin/archive-audit-logs`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) showMsg("error", d.detail || "Archive failed.");
+      else { showMsg("success", d.message); refetchAuditStats(); refetchStats(); }
+    } catch (e) { showMsg("error", e.message); }
+    finally { setArchiving(false); }
   };
 
   const statItems = [
@@ -4313,6 +4326,46 @@ const SettingsTab = () => {
         </div>
       </div>
 
+      {/* ── Audit Log Archive ─────────────────────────── */}
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 700 }}>Audit Log Archive</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 2 }}>Move audit logs older than 1 year to an archive table to keep the database lean</div>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 18 }}>
+            {[
+              { label: "Active Logs",    value: auditStats?.active,     accent: C.accent },
+              { label: "Archivable (>1yr)", value: auditStats?.archivable, accent: "#f59e0b" },
+              { label: "Archived",       value: auditStats?.archived,   accent: "#6b7280" },
+            ].map(({ label, value, accent }) => (
+              <div key={label} style={{ background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 18px", borderTop: `3px solid ${accent}` }}>
+                <div style={{ color: C.textMuted, fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: C.sans, marginBottom: 6 }}>{label}</div>
+                <div style={{ color: C.text, fontSize: 26, fontWeight: 800, fontFamily: C.mono, lineHeight: 1 }}>{value ?? "—"}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
+            <div>
+              <div style={{ color: "#92400e", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Archive Old Logs</div>
+              <div style={{ color: "#b45309", fontFamily: C.sans, fontSize: 12, marginTop: 3 }}>
+                {auditStats?.archivable > 0
+                  ? `${auditStats.archivable} logs older than 1 year will be moved to the archive table`
+                  : "No logs older than 1 year — nothing to archive"}
+              </div>
+            </div>
+            <button onClick={handleArchiveLogs} disabled={archiving || !auditStats?.archivable}
+              style={{ flexShrink: 0, marginLeft: 20, background: auditStats?.archivable ? "#f59e0b" : "#e5e7eb",
+                color: auditStats?.archivable ? "#fff" : C.textMuted, border: "none",
+                padding: "8px 20px", borderRadius: 8,
+                cursor: archiving || !auditStats?.archivable ? "not-allowed" : "pointer",
+                fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+              {archiving ? "Archiving…" : "Archive Now"}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ── Backup & Restore ──────────────────────────── */}
       <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
         <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
@@ -4452,7 +4505,7 @@ const InvoiceTab = ({ isAdmin }) => {
   useEffect(() => {
     if (!employerId) { setEmployees([]); setSelectedIds(new Set()); setSearch(""); return; }
     setLoadingEmps(true);
-    apiFetch(`${API}/employees/?limit=500`)
+    apiFetch(`${API}/employees/`)
       .then(r => r.json())
       .then(data => {
         const filtered = (Array.isArray(data) ? data : [])

@@ -121,6 +121,21 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False, server_default="false")
 
 
+class AuditLogArchive(Base):
+    """Audit logs older than 1 year moved here to keep the main table lean."""
+    __tablename__ = "audit_logs_archive"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, nullable=False, index=True)   # no FK — employee may be deleted
+    changed_at  = Column(DateTime(timezone=True), nullable=False, index=True)
+    field_name  = Column(String(100), nullable=False)
+    old_value   = Column(Text)
+    new_value   = Column(Text)
+    note        = Column(Text)
+    changed_by  = Column(String(100))
+    archived_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class InvoiceRecord(Base):
     __tablename__ = "invoice_records"
 
