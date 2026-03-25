@@ -4888,8 +4888,17 @@ const InvoiceTab = ({ isAdmin }) => {
     }
     if (incAF && afAmt > 0)
       drawRow("Agency Fee", `MVR ${afAmt.toFixed(2)}`, [248,250,252],[15,23,42],false,8);
-    drawRow("TOTAL DUE", `MVR ${gtotal.toFixed(2)}`, [15,23,42],[255,255,255],true,11);
-    y += 8;
+
+    // ── Total Due — large prominent row ──────────────────
+    y += 3;
+    const tdH = 18;
+    doc.setFillColor(15,23,42);
+    doc.rect(tX, y, tW, tdH, "F");
+    doc.setFontSize(9); doc.setFont("helvetica","bold"); doc.setTextColor(180,200,220);
+    doc.text("TOTAL DUE", tX + 5, y + 6.5);
+    doc.setFontSize(13); doc.setFont("helvetica","bold"); doc.setTextColor(255,255,255);
+    doc.text(`MVR ${gtotal.toFixed(2)}`, W - M - 3, y + tdH - 4.5, { align: "right" });
+    y += tdH + 8;
 
     // ── Signature & Stamp ────────────────────────────────
     const sigStampY = y;
