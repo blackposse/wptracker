@@ -1149,42 +1149,46 @@ const SiteCard = ({ site, onViewEmployees, onSlotsChanged, onSiteUpdated }) => {
       borderRadius: 10, padding: "14px 18px",
       boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-        <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={site.site_name}>{site.site_name}</div>
-        {atCapacity && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>QUOTA FULL</span>}
-        <button
-          onClick={() => setShowSlots(true)}
-          style={{
-            background: "#f0fdf4", color: "#16a34a",
-            border: "1px solid #bbf7d0",
-            padding: "3px 12px", borderRadius: 20, cursor: "pointer",
-            fontFamily: C.sans, fontSize: 11, fontWeight: 600,
-          }}
-          title="Manage quota slots">
-          Quota Slots
-        </button>
-        <button
-          onClick={() => onViewEmployees && onViewEmployees(site)}
-          style={{
-            background: C.pageBg, color: C.textSub,
-            border: `1px solid ${C.border}`,
-            padding: "3px 12px", borderRadius: 20, cursor: "pointer",
-            fontFamily: C.mono, fontSize: 12, fontWeight: 600,
-          }}
-          title="View assigned employees">
-          {site.used_slots} / {site.total_quota_slots} slots
-        </button>
-        <button
-          onClick={() => { setEditingQuota(true); setQuotaValue(String(site.total_quota_slots)); setQuotaError(null); }}
-          style={{
-            background: C.pageBg, color: C.textSub,
-            border: `1px solid ${C.border}`,
-            padding: "3px 10px", borderRadius: 20, cursor: "pointer",
-            fontFamily: C.sans, fontSize: 11,
-          }}
-          title="Edit total quota">
-          ✏
-        </button>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{site.site_name}</div>
+          {atCapacity && <span style={{ flexShrink: 0, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>QUOTA FULL</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowSlots(true)}
+            style={{
+              background: "#f0fdf4", color: "#16a34a",
+              border: "1px solid #bbf7d0",
+              padding: "3px 12px", borderRadius: 20, cursor: "pointer",
+              fontFamily: C.sans, fontSize: 11, fontWeight: 600,
+            }}
+            title="Manage quota slots">
+            Quota Slots
+          </button>
+          <button
+            onClick={() => onViewEmployees && onViewEmployees(site)}
+            style={{
+              background: C.pageBg, color: C.textSub,
+              border: `1px solid ${C.border}`,
+              padding: "3px 12px", borderRadius: 20, cursor: "pointer",
+              fontFamily: C.mono, fontSize: 12, fontWeight: 600,
+            }}
+            title="View assigned employees">
+            {site.used_slots} / {site.total_quota_slots} slots
+          </button>
+          <button
+            onClick={() => { setEditingQuota(true); setQuotaValue(String(site.total_quota_slots)); setQuotaError(null); }}
+            style={{
+              background: C.pageBg, color: C.textSub,
+              border: `1px solid ${C.border}`,
+              padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+              fontFamily: C.sans, fontSize: 11,
+            }}
+            title="Edit total quota">
+            ✏
+          </button>
+        </div>
       </div>
       {editingQuota && (
         <div style={{ marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
