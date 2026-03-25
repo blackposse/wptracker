@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import appLogo from "./assets/logo.png";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -5707,18 +5708,11 @@ export default function App() {
         <div className="dg-header" style={{ display: "flex", alignItems: "center", gap: 20, height: 62 }}>
           {/* Brand */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: `linear-gradient(135deg, ${C.accent}, #b91c1c)`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: `0 2px 8px ${C.accent}40`,
-            }}>
-              <span style={{ color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: C.sans }}>D</span>
-            </div>
+            <img src={appLogo} alt="Logo" style={{ width: 32, height: 32, objectFit: "contain" }} />
             <div>
               <div style={{ color: C.text, fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                 DocGuard
-                {urgentTotal > 0 && (
+                {false && urgentTotal > 0 && (
                   <span style={{
                     background: "#dc2626", color: "#fff",
                     fontSize: 10, fontWeight: 700, fontFamily: C.mono,
