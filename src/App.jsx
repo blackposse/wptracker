@@ -5708,7 +5708,7 @@ export default function App() {
         <div className="dg-header" style={{ display: "flex", alignItems: "center", gap: 20, height: 62 }}>
           {/* Brand */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={appLogo} alt="Logo" style={{ width: 32, height: 32, objectFit: "contain" }} />
+            <img src={appLogo} alt="Logo" style={{ width: 40, height: 40, objectFit: "contain" }} />
             <div>
               <div style={{ color: C.text, fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                 DocGuard
