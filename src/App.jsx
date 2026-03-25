@@ -3928,9 +3928,11 @@ const ReportsTab = () => {
 // ── Settings Tab ──────────────────────────────────────────
 const SettingsTab = () => {
   const { data: stats, refetch: refetchStats } = useFetch(`${API}/admin/stats`);
-  const [confirmWipe, setConfirmWipe] = useState(false);
-  const [loading, setLoading]         = useState(false);
-  const [message, setMessage]         = useState(null); // { type: "success"|"error", text }
+  const [confirmWipe, setConfirmWipe]       = useState(false);
+  const [loading, setLoading]               = useState(false);
+  const [message, setMessage]               = useState(null); // { type: "success"|"error", text }
+  const [confirmRestore, setConfirmRestore] = useState(null); // backup JSON object pending confirmation
+  const [restoreLoading, setRestoreLoading] = useState(false);
 
   // Invoice branding state (persisted in localStorage)
   const [coName,    setCoName]    = useState(() => localStorage.getItem("inv_co_name")    || "");
@@ -3993,6 +3995,57 @@ const SettingsTab = () => {
       else { const d = await res.json(); showMsg("error", d.detail || "Seed failed."); }
     } catch (e) { showMsg("error", e.message); }
     setLoading(false);
+  };
+
+  const handleDownloadBackup = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`${API}/backup/export`);
+      if (!res.ok) { const d = await res.json(); showMsg("error", d.detail || "Export failed."); return; }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      const ts   = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      a.href = url; a.download = `docguard_backup_${ts}.json`;
+      a.click(); URL.revokeObjectURL(url);
+      showMsg("success", `Backup downloaded — ${data.employees?.length ?? 0} employees, ${data.employers?.length ?? 0} employers.`);
+    } catch (e) { showMsg("error", e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleRestoreFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (!parsed.version || !parsed.employers) { showMsg("error", "Invalid backup file."); return; }
+        setConfirmRestore(parsed);
+      } catch { showMsg("error", "Could not parse backup file — make sure it is a valid JSON backup."); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleRestore = async () => {
+    if (!confirmRestore) return;
+    setRestoreLoading(true);
+    try {
+      const res = await apiFetch(`${API}/backup/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(confirmRestore),
+      });
+      const d = await res.json();
+      if (!res.ok) { showMsg("error", d.detail || "Restore failed."); }
+      else {
+        showMsg("success", `Restore complete — ${d.employees} employees, ${d.employers} employers, ${d.users} users restored.`);
+        refetchStats();
+      }
+    } catch (e) { showMsg("error", e.message); }
+    finally { setRestoreLoading(false); setConfirmRestore(null); }
   };
 
   const statItems = [
@@ -4211,7 +4264,7 @@ const SettingsTab = () => {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10 }}>
             <div>
               <div style={{ color: "#dc2626", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Wipe All Data</div>
-              <div style={{ color: "#ef4444", fontFamily: C.sans, fontSize: 12, marginTop: 3, opacity: 0.8 }}>Permanently deletes all employers, sites, employees and audit logs. Users are kept.</div>
+              <div style={{ color: "#ef4444", fontFamily: C.sans, fontSize: 12, marginTop: 3, opacity: 0.8 }}>Permanently deletes all employers, sites, employees and audit logs. Take a backup first!</div>
             </div>
             <div style={{ flexShrink: 0, marginLeft: 20 }}>
               {!confirmWipe ? (
@@ -4259,6 +4312,88 @@ const SettingsTab = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Backup & Restore ──────────────────────────── */}
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.border}`, background: C.pageBg }}>
+          <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 700 }}>Backup & Restore</div>
+          <div style={{ color: C.textMuted, fontFamily: C.sans, fontSize: 12, marginTop: 2 }}>Download a full snapshot of all data, or restore from a previous backup file</div>
+        </div>
+        <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+          {/* Download backup */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10 }}>
+            <div>
+              <div style={{ color: "#0369a1", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Download Backup</div>
+              <div style={{ color: "#0284c7", fontFamily: C.sans, fontSize: 12, marginTop: 3, opacity: 0.85 }}>
+                Exports all employers, sites, employees, quota slots, users and audit logs as a JSON file
+              </div>
+            </div>
+            <button onClick={handleDownloadBackup} disabled={loading}
+              style={{ flexShrink: 0, marginLeft: 20, background: "#0ea5e9", color: "#fff", border: "none",
+                padding: "8px 20px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
+                fontFamily: C.sans, fontSize: 13, fontWeight: 600, opacity: loading ? 0.6 : 1 }}>
+              {loading ? "Exporting…" : "Download Backup"}
+            </button>
+          </div>
+
+          {/* Restore from file */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
+            <div>
+              <div style={{ color: "#92400e", fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>Restore from Backup</div>
+              <div style={{ color: "#b45309", fontFamily: C.sans, fontSize: 12, marginTop: 3, opacity: 0.85 }}>
+                Replaces all current data with the contents of a backup file. Admin only. Cannot be undone.
+              </div>
+            </div>
+            <label style={{ flexShrink: 0, marginLeft: 20 }}>
+              <input type="file" accept=".json,application/json" style={{ display: "none" }} onChange={handleRestoreFile} />
+              <span style={{ display: "inline-block", background: "#f59e0b", color: "#fff", border: "none",
+                padding: "8px 20px", borderRadius: 8, cursor: "pointer",
+                fontFamily: C.sans, fontSize: 13, fontWeight: 600 }}>
+                Choose File…
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Restore Confirmation Modal ─────────────────── */}
+      {confirmRestore && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: C.cardBg, borderRadius: 14, padding: "28px 30px", width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.25)", border: `1px solid ${C.border}` }}>
+            <div style={{ fontFamily: C.sans, fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>Restore from Backup?</div>
+            <div style={{ fontFamily: C.sans, fontSize: 13, color: C.textSub, marginBottom: 16 }}>
+              This will <strong>replace all current data</strong> with the backup exported on{" "}
+              <strong>{confirmRestore.exported_at?.slice(0,10) || "unknown date"}</strong>.
+            </div>
+            <div style={{ background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              {[
+                ["Employers",   confirmRestore.employers?.length   ?? 0],
+                ["Sites",       confirmRestore.sites?.length       ?? 0],
+                ["Employees",   confirmRestore.employees?.length   ?? 0],
+                ["Quota Slots", confirmRestore.quota_slots?.length ?? 0],
+                ["Users",       confirmRestore.users?.length       ?? 0],
+                ["Audit Logs",  confirmRestore.audit_logs?.length  ?? 0],
+              ].map(([label, count]) => (
+                <div key={label} style={{ textAlign: "center" }}>
+                  <div style={{ fontFamily: C.mono, fontSize: 20, fontWeight: 800, color: C.text }}>{count}</div>
+                  <div style={{ fontFamily: C.sans, fontSize: 10, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmRestore(null)} disabled={restoreLoading}
+                style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "none", color: C.textSub, fontFamily: C.sans, fontSize: 13, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={handleRestore} disabled={restoreLoading}
+                style={{ padding: "8px 20px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontFamily: C.sans, fontSize: 13, fontWeight: 700, cursor: restoreLoading ? "not-allowed" : "pointer", opacity: restoreLoading ? 0.7 : 1 }}>
+                {restoreLoading ? "Restoring…" : "Yes, Restore Now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
