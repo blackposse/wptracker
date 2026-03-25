@@ -4656,9 +4656,9 @@ const InvoiceTab = ({ isAdmin }) => {
   })();
   const perEmp = (() => {
     if (invoiceType === "wpf")       return months * rate;
-    if (invoiceType === "insurance") return 850;
+    if (invoiceType === "insurance") return 800;
     if (invoiceType === "quota")     return quotaPerEmp;
-    if (invoiceType === "combined")  return (combineWpf ? months * rate : 0) + (combineInsurance ? 850 : 0) + (combineQuota ? quotaPerEmp : 0);
+    if (invoiceType === "combined")  return (combineWpf ? months * rate : 0) + (combineInsurance ? 800 : 0) + (combineQuota ? quotaPerEmp : 0);
     return 0;
   })();
   const subtotal     = selectedEmployees.length * perEmp;
@@ -4677,9 +4677,9 @@ const InvoiceTab = ({ isAdmin }) => {
     const qPerEmp = qMode === "annual" ? 2000
       : qFirst ? (174 + (qMo - 1) * 166) : (qMo * 166);
     const pPerEmp = iType === "wpf" ? mo * rt
-      : iType === "insurance" ? 850
+      : iType === "insurance" ? 800
       : iType === "quota" ? qPerEmp
-      : (cwpf ? mo * rt : 0) + (cins ? 850 : 0) + (cquota ? qPerEmp : 0);
+      : (cwpf ? mo * rt : 0) + (cins ? 800 : 0) + (cquota ? qPerEmp : 0);
     const n = emps.length;
     const subtotal = n * pPerEmp;
 
@@ -4759,7 +4759,7 @@ const InvoiceTab = ({ isAdmin }) => {
     if (iType === "wpf") {
       doc.text(`Rate: MVR ${Number(rt).toFixed(2)} / employee / month   |   Coverage: ${mo} month${mo>1?"s":""} from each employee's WPF expiry date`, M, y);
     } else if (iType === "insurance") {
-      doc.text("Annual insurance fee: MVR 850.00 per employee", M, y);
+      doc.text("Annual insurance fee: MVR 800.00 per employee", M, y);
     } else if (iType === "combined") {
       const parts = [cwpf && "WPF", cins && "Insurance", cquota && "Quota Slot"].filter(Boolean);
       doc.text(`Combined invoice — ${parts.join(" + ")}   |   ${n} employee${n !== 1 ? "s" : ""}`, M, y);
@@ -4805,7 +4805,7 @@ const InvoiceTab = ({ isAdmin }) => {
         String(i + 1), emp.full_name, emp.work_permit_number || "—",
         emp.insurance_expiry || "—",
         emp.insurance_expiry ? covPeriod(emp.insurance_expiry, 12) : "—",
-        (850).toFixed(2),
+        (800).toFixed(2),
       ]);
       colStyles = {
         0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 42 }, 2: { cellWidth: 26 },
@@ -4847,7 +4847,7 @@ const InvoiceTab = ({ isAdmin }) => {
           autoTable(doc, {
             startY: y,
             head: [["#", "Employee Name", "Insurance Expiry", "Amount (MVR)"]],
-            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.insurance_expiry||"—", (850).toFixed(2)]),
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.insurance_expiry||"—", (800).toFixed(2)]),
             styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
             columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:120},2:{cellWidth:26,halign:"center"},3:{cellWidth:18,halign:"right",fontStyle:"bold"} },
             margin: { left: M, right: M },
@@ -4889,12 +4889,12 @@ const InvoiceTab = ({ isAdmin }) => {
 
     if (iType === "combined") {
       if (cwpf)  drawRow(`WPF: ${n} emp x ${mo}mo x MVR ${rt}`, `MVR ${(n*mo*rt).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
-      if (cins)  drawRow(`Insurance: ${n} emp x MVR 850`, `MVR ${(n*850).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
+      if (cins)  drawRow(`Insurance: ${n} emp x MVR 800`, `MVR ${(n*800).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
       if (cquota) drawRow(`Quota: ${n} x MVR ${qPerEmp.toFixed(2)}`, `MVR ${(n*qPerEmp).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
     } else {
       let subtotalLabel;
       if (iType === "wpf") subtotalLabel = `WPF: ${n} emp x ${mo} mo x MVR ${rt}`;
-      else if (iType === "insurance") subtotalLabel = `Insurance: ${n} emp x MVR 850`;
+      else if (iType === "insurance") subtotalLabel = `Insurance: ${n} emp x MVR 800`;
       else if (qMode === "annual") subtotalLabel = `Quota Slots: ${n} x MVR 2,000`;
       else subtotalLabel = `Quota Slots: ${n} x MVR ${pPerEmp.toFixed(2)} (${qMo} mo)`;
       drawRow(subtotalLabel, `MVR ${subtotal.toFixed(2)}`, [248,250,252],[15,23,42],false,8);
@@ -5213,7 +5213,7 @@ const InvoiceTab = ({ isAdmin }) => {
                     <div style={{ fontFamily: C.sans, fontSize: 11, fontWeight: 600, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Include Fee Types</div>
                     {[
                       ["wpf", "Work Permit Fee", combineWpf, setCombineWpf],
-                      ["insurance", "Insurance (MVR 850/yr)", combineInsurance, setCombineInsurance],
+                      ["insurance", "Insurance (MVR 800/yr)", combineInsurance, setCombineInsurance],
                       ["quota", "Quota Slot Fee", combineQuota, setCombineQuota],
                     ].map(([key, label, checked, setter]) => (
                       <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, color: C.text, userSelect: "none", marginBottom: 8 }}>
@@ -5295,12 +5295,12 @@ const InvoiceTab = ({ isAdmin }) => {
                     ...(invoiceType === "wpf"
                       ? [["Rate", `MVR ${Number(rate).toFixed(2)} / mo`], ["Months", `${months}`]]
                       : invoiceType === "insurance"
-                      ? [["Rate", "MVR 850.00 / yr"]]
+                      ? [["Rate", "MVR 800.00 / yr"]]
                       : invoiceType === "quota"
                       ? (quotaMode === "annual" ? [["Rate", "MVR 2,000 / yr"]] : [["Months", `${quotaMonths}`], ["Per Slot", `MVR ${quotaPerEmp.toFixed(2)}`]])
                       : [
                           ...(combineWpf       ? [["WPF", `${selectedIds.size} x MVR ${(months * rate).toFixed(2)}`]] : []),
-                          ...(combineInsurance ? [["Insurance", `${selectedIds.size} x MVR 850.00`]] : []),
+                          ...(combineInsurance ? [["Insurance", `${selectedIds.size} x MVR 800.00`]] : []),
                           ...(combineQuota     ? [["Quota", `${selectedIds.size} x MVR ${quotaPerEmp.toFixed(2)}`]] : []),
                         ]),
                     ["Subtotal", `MVR ${subtotal.toFixed(2)}`],
@@ -5415,7 +5415,7 @@ const InvoiceTab = ({ isAdmin }) => {
                               <td style={{ padding: "10px 12px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap" }}>
                                 {emp.insurance_expiry ? coveragePeriod(emp.insurance_expiry, 12) : <span style={{ color: C.textMuted }}>—</span>}
                               </td>
-                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>850.00</td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>800.00</td>
                             </>}
                             {invoiceType === "quota" && <>
                               <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.quota_slot_number || <span style={{ color: C.textMuted }}>—</span>}</td>
@@ -5423,7 +5423,7 @@ const InvoiceTab = ({ isAdmin }) => {
                             </>}
                             {invoiceType === "combined" && <>
                               {combineWpf       && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{(months * rate).toFixed(2)}</td>}
-                              {combineInsurance && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>850.00</td>}
+                              {combineInsurance && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>800.00</td>}
                               {combineQuota     && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{quotaPerEmp.toFixed(2)}</td>}
                               <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{perEmp.toFixed(2)}</td>
                             </>}
