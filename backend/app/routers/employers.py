@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from app.database import get_db
 from app.models.models import Employer, Site, Employee, User
 from app.schemas.schemas import EmployerCreate, EmployerRead, DashboardStats, ExpiryStatus
+from pydantic import BaseModel
 from app.services.expiry import calculate_expiry_status, EXPIRY_FIELDS
 from app.auth import get_current_user
 from datetime import date, timedelta
@@ -34,6 +35,27 @@ async def get_employer(employer_id: int, db: AsyncSession = Depends(get_db), cur
     emp = result.scalar_one_or_none()
     if not emp:
         raise HTTPException(status_code=404, detail="Employer not found")
+    return emp
+
+
+class EmployerUpdate(BaseModel):
+    name: str | None = None
+    registration_number: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
+
+
+@router.patch("/{employer_id}", response_model=EmployerRead)
+async def update_employer(employer_id: int, payload: EmployerUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    result = await db.execute(select(Employer).where(Employer.id == employer_id))
+    emp = result.scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(emp, field, value)
+    await db.commit()
+    await db.refresh(emp)
     return emp
 
 

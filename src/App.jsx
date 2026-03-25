@@ -2336,6 +2336,11 @@ const EmployersTab = () => {
   const [siteEmpLoading, setSiteEmpLoading] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState(null);
 
+  const [editEmployer, setEditEmployer] = useState(null); // employer object being edited
+  const [editForm, setEditForm]         = useState({});
+  const [editError, setEditError]       = useState(null);
+  const [editSaving, setEditSaving]     = useState(false);
+
   const [togglingId, setTogglingId] = useState(null);
   const [toggleError, setToggleError] = useState(null);
   const [collapsedIds, setCollapsedIds] = useState({});
@@ -2357,6 +2362,20 @@ const EmployersTab = () => {
     } finally {
       setTogglingId(null);
     }
+  };
+
+  const handleSaveEmployer = async () => {
+    setEditSaving(true); setEditError(null);
+    try {
+      const res = await apiFetch(`${API}/employers/${editEmployer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) { setEditEmployer(null); refetchEmployers(); }
+      else { const d = await res.json(); setEditError(d.detail || "Error saving employer"); }
+    } catch (e) { setEditError(e.message); }
+    finally { setEditSaving(false); }
   };
 
   const handleViewSiteEmployees = async (site) => {
@@ -2498,6 +2517,11 @@ const EmployersTab = () => {
                       fontFamily: C.sans, fontSize: 12, fontWeight: 600,
                     }}>+ Add Site</button>
                   )}
+                  <button onClick={() => { setEditEmployer(employer); setEditForm({ name: employer.name, registration_number: employer.registration_number, contact_name: employer.contact_name || "", contact_email: employer.contact_email || "", contact_phone: employer.contact_phone || "" }); setEditError(null); }} style={{
+                    background: "transparent", color: C.textSub, border: `1px solid ${C.border}`,
+                    padding: "6px 14px", borderRadius: 8, cursor: "pointer",
+                    fontFamily: C.sans, fontSize: 12, fontWeight: 600,
+                  }}>✏ Edit</button>
                   {empSites.length > 0 && (
                     <button onClick={() => toggleCollapse(employer.id)} style={{
                       background: "transparent", color: C.textMuted, border: `1px solid ${C.border}`,
@@ -2556,6 +2580,21 @@ const EmployersTab = () => {
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <button onClick={() => { setShowEmployerForm(false); setError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>Cancel</button>
             <button onClick={handleAddEmployer} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, boxShadow: `0 2px 8px ${C.accent}40` }}>Create</button>
+          </div>
+        </Modal>
+      )}
+
+      {editEmployer && (
+        <Modal title="Edit Employer" onClose={() => { setEditEmployer(null); setEditError(null); }}>
+          {editError && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontFamily: C.sans, fontSize: 13, marginBottom: 16 }}>⚠ {editError}</div>}
+          <InputRow label="Employer Name"       name="name"                value={editForm.name || ""}                onChange={e => setEditForm(f => ({ ...f, [e.target.name]: e.target.value }))} required />
+          <InputRow label="Registration Number" name="registration_number" value={editForm.registration_number || ""} onChange={e => setEditForm(f => ({ ...f, [e.target.name]: e.target.value }))} required />
+          <InputRow label="Contact Name"        name="contact_name"        value={editForm.contact_name || ""}        onChange={e => setEditForm(f => ({ ...f, [e.target.name]: e.target.value }))} />
+          <InputRow label="Contact Email"       name="contact_email"       value={editForm.contact_email || ""}       onChange={e => setEditForm(f => ({ ...f, [e.target.name]: e.target.value }))} />
+          <InputRow label="Contact Phone"       name="contact_phone"       value={editForm.contact_phone || ""}       onChange={e => setEditForm(f => ({ ...f, [e.target.name]: e.target.value }))} />
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+            <button onClick={() => { setEditEmployer(null); setEditError(null); }} style={{ background: C.pageBg, color: C.textSub, border: `1px solid ${C.border}`, padding: "9px 20px", borderRadius: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13 }}>Cancel</button>
+            <button onClick={handleSaveEmployer} disabled={editSaving} style={{ background: C.accent, color: "#fff", border: "none", padding: "9px 24px", borderRadius: 8, cursor: editSaving ? "not-allowed" : "pointer", fontFamily: C.sans, fontSize: 13, fontWeight: 600, opacity: editSaving ? 0.7 : 1 }}>{editSaving ? "Saving…" : "Save Changes"}</button>
           </div>
         </Modal>
       )}
