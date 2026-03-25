@@ -3081,63 +3081,88 @@ const LoginScreen = ({ onLogin }) => {
 
   return (
     <div style={{
-      background: C.pageBg, minHeight: "100vh",
+      minHeight: "100vh",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: C.sans,
+      background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+      padding: 24,
     }}>
-      <div style={{
-        background: C.cardBg, border: `1px solid ${C.border}`,
-        borderRadius: 16, padding: "40px 44px", width: 360,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 9,
-            background: `linear-gradient(135deg, ${C.accent}, #b91c1c)`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: `0 2px 10px ${C.accent}40`,
-          }}>
-            <span style={{ color: "#fff", fontSize: 16, fontWeight: 800 }}>W</span>
-          </div>
-          <div>
-            <div style={{ color: C.text, fontSize: 15, fontWeight: 700 }}>DocGuard</div>
-            <div style={{ color: C.textMuted, fontSize: 11 }}>Sign in to continue</div>
-          </div>
+      {/* Card */}
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+
+        {/* Logo + brand */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
+          <img src={appLogo} alt="DocGuard" style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 4px 16px rgba(220,38,38,0.4))" }} />
+          <div style={{ color: "#fff", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em" }}>DocGuard</div>
+          <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginTop: 4, letterSpacing: "0.04em" }}>Expatriate Compliance Management</div>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Username</label>
-            <input
-              type="text" value={username} onChange={e => setUsername(e.target.value)}
-              required autoFocus style={inputStyle(false)}
-              placeholder="admin"
-            />
-          </div>
-          <div style={{ marginBottom: 24 }}>
-            <label style={labelStyle}>Password</label>
-            <input
-              type="password" value={password} onChange={e => setPassword(e.target.value)}
-              required style={inputStyle(false)}
-            />
-          </div>
-          {error && (
-            <div style={{
-              background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626",
-              padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16,
-            }}>
-              {error}
+        {/* Form card */}
+        <div style={{
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 20, padding: "36px 40px", width: "100%",
+          boxShadow: "0 24px 64px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(12px)",
+        }}>
+          <div style={{ color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: 600, marginBottom: 24, textAlign: "center" }}>Sign in to your account</div>
+
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ ...labelStyle, color: "rgba(255,255,255,0.6)", fontSize: 11 }}>USERNAME</label>
+              <input
+                type="text" value={username} onChange={e => setUsername(e.target.value)}
+                required autoFocus
+                placeholder="Enter your username"
+                style={{
+                  ...inputStyle(false),
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  borderRadius: 10,
+                }}
+              />
             </div>
-          )}
-          <button type="submit" disabled={loading} style={{
-            width: "100%", background: C.accent, color: "#fff",
-            border: "none", padding: "11px 0", borderRadius: 9,
-            fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1, fontFamily: C.sans,
-          }}>
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ ...labelStyle, color: "rgba(255,255,255,0.6)", fontSize: 11 }}>PASSWORD</label>
+              <input
+                type="password" value={password} onChange={e => setPassword(e.target.value)}
+                required
+                placeholder="Enter your password"
+                style={{
+                  ...inputStyle(false),
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  borderRadius: 10,
+                }}
+              />
+            </div>
+            {error && (
+              <div style={{
+                background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", color: "#fca5a5",
+                padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, textAlign: "center",
+              }}>
+                {error}
+              </div>
+            )}
+            <button type="submit" disabled={loading} style={{
+              width: "100%", background: C.accent, color: "#fff",
+              border: "none", padding: "13px 0", borderRadius: 10,
+              fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1, fontFamily: C.sans,
+              boxShadow: "0 4px 20px rgba(220,38,38,0.4)",
+              letterSpacing: "0.02em",
+            }}>
+              {loading ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+        </div>
+
+        {/* Copyright */}
+        <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 11, marginTop: 28, textAlign: "center", letterSpacing: "0.02em" }}>
+          © {new Date().getFullYear()} DocGuard — Expatriate Compliance Management · blackposse
+        </div>
       </div>
     </div>
   );
