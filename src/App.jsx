@@ -3084,7 +3084,7 @@ const LoginScreen = ({ onLogin }) => {
       minHeight: "100vh",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: C.sans,
-      background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+      background: "linear-gradient(135deg, #1a0000 0%, #7f1d1d 45%, #450a0a 100%)",
       padding: 24,
     }}>
       {/* Card */}
