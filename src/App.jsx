@@ -4299,6 +4299,9 @@ const InvoiceTab = ({ isAdmin }) => {
   const [histType, setHistType]               = useState("all");
   const [histPage, setHistPage]               = useState(1);
   const HIST_PER_PAGE = 15;
+  const [markPaidConfirm, setMarkPaidConfirm] = useState(null);  // invoice record pending confirmation
+  const [markPaidLoading, setMarkPaidLoading] = useState(false);
+  const [markPaidError, setMarkPaidError]     = useState(null);
 
   useEffect(() => {
     if (!employerId) { setEmployees([]); setSelectedIds(new Set()); setSearch(""); return; }
@@ -4374,7 +4377,34 @@ const InvoiceTab = ({ isAdmin }) => {
   const agencyFeeAmt = includeAgencyFee ? (parseFloat(agencyFee) || 0) : 0;
   const grandTotal   = subtotal + agencyFeeAmt;
 
-  const generatePDF = () => {
+  // ── Shared PDF builder (used by both generate and replay) ──
+  const buildPDFDoc = (ctx) => {
+    const {
+      invNumber, invDate, employerName, invoiceType: iType,
+      emps, cfg, cwpf, cins, cquota, notesText, gtotal,
+    } = ctx;
+    const { months: mo, rate: rt, quotaMode: qMode, quotaMonths: qMo,
+            quotaFirstMonth: qFirst, includeAgencyFee: incAF, agencyFeeAmt: afAmt } = cfg;
+
+    const qPerEmp = qMode === "annual" ? 2000
+      : qFirst ? (174 + (qMo - 1) * 166) : (qMo * 166);
+    const pPerEmp = iType === "wpf" ? mo * rt
+      : iType === "insurance" ? 850
+      : iType === "quota" ? qPerEmp
+      : (cwpf ? mo * rt : 0) + (cins ? 850 : 0) + (cquota ? qPerEmp : 0);
+    const n = emps.length;
+    const subtotal = n * pPerEmp;
+
+    function fmtD(d) {
+      const ms = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      return `${String(d.getDate()).padStart(2,"0")} ${ms[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    function covPeriod(expiryStr, numMonths) {
+      const s = new Date(expiryStr), e = new Date(expiryStr);
+      e.setMonth(e.getMonth() + numMonths);
+      return `${fmtD(s)} - ${fmtD(e)}`;
+    }
+
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const W = 210, M = 18;
 
@@ -4423,8 +4453,8 @@ const InvoiceTab = ({ isAdmin }) => {
     doc.text("Date",        W - M - 42, metaY + 6);
     doc.text("Currency",    W - M - 42, metaY + 12);
     doc.setTextColor(15,23,42); doc.setFont("helvetica","bold");
-    doc.text(invoiceNumber, W - M, metaY,      { align: "right" });
-    doc.text(invoiceDate,   W - M, metaY + 6,  { align: "right" });
+    doc.text(invNumber, W - M, metaY,      { align: "right" });
+    doc.text(invDate,   W - M, metaY + 6,  { align: "right" });
     doc.text("MVR",         W - M, metaY + 12, { align: "right" });
 
     y = Math.max(infoY + 4, metaY + 18);
@@ -4436,22 +4466,22 @@ const InvoiceTab = ({ isAdmin }) => {
     doc.setFontSize(7); doc.setFont("helvetica","bold"); doc.setTextColor(100,116,139);
     doc.text("BILL TO", M, y); y += 5;
     doc.setFontSize(12); doc.setFont("helvetica","bold"); doc.setTextColor(15,23,42);
-    doc.text(selectedEmployer?.name || "—", M, y); y += 6;
+    doc.text(employerName || "—", M, y); y += 6;
     doc.setFontSize(8); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
-    if (invoiceType === "wpf") {
-      doc.text(`Rate: MVR ${Number(rate).toFixed(2)} / employee / month   |   Coverage: ${months} month${months>1?"s":""} from each employee's WPF expiry date`, M, y);
-    } else if (invoiceType === "insurance") {
+    if (iType === "wpf") {
+      doc.text(`Rate: MVR ${Number(rt).toFixed(2)} / employee / month   |   Coverage: ${mo} month${mo>1?"s":""} from each employee's WPF expiry date`, M, y);
+    } else if (iType === "insurance") {
       doc.text("Annual insurance fee: MVR 850.00 per employee", M, y);
-    } else if (invoiceType === "combined") {
-      const parts = [combineWpf && "WPF", combineInsurance && "Insurance", combineQuota && "Quota Slot"].filter(Boolean);
-      doc.text(`Combined invoice — ${parts.join(" + ")}   |   ${selectedIds.size} employee${selectedIds.size !== 1 ? "s" : ""}`, M, y);
-    } else if (quotaMode === "annual") {
+    } else if (iType === "combined") {
+      const parts = [cwpf && "WPF", cins && "Insurance", cquota && "Quota Slot"].filter(Boolean);
+      doc.text(`Combined invoice — ${parts.join(" + ")}   |   ${n} employee${n !== 1 ? "s" : ""}`, M, y);
+    } else if (qMode === "annual") {
       doc.text("Annual quota slot fee: MVR 2,000.00 per slot", M, y);
     } else {
-      const modeDesc = quotaFirstMonth
-        ? `1st month MVR 174.00${quotaMonths > 1 ? ` + ${quotaMonths - 1} x MVR 166.00` : ""}`
-        : `${quotaMonths} x MVR 166.00`;
-      doc.text(`Monthly quota slot fee: ${quotaMonths} month${quotaMonths>1?"s":""} (${modeDesc})`, M, y);
+      const modeDesc = qFirst
+        ? `1st month MVR 174.00${qMo > 1 ? ` + ${qMo - 1} x MVR 166.00` : ""}`
+        : `${qMo} x MVR 166.00`;
+      doc.text(`Monthly quota slot fee: ${qMo} month${qMo>1?"s":""} (${modeDesc})`, M, y);
     }
     y += 10;
 
@@ -4468,99 +4498,60 @@ const InvoiceTab = ({ isAdmin }) => {
 
     let tableHead, tableBody, colStyles;
 
-    if (invoiceType === "wpf") {
-      // 7 cols: 8+42+24+22+50+10+18 = 174
+    if (iType === "wpf") {
       tableHead = [["#", "Employee Name", "WP Number", "WPF Expiry", "Coverage Period", "Mo.", "Amount (MVR)"]];
-      tableBody = selectedEmployees.map((emp, i) => [
-        String(i + 1),
-        emp.full_name,
-        emp.work_permit_number || "—",
+      tableBody = emps.map((emp, i) => [
+        String(i + 1), emp.full_name, emp.work_permit_number || "—",
         emp.work_permit_fee_expiry || "—",
-        emp.work_permit_fee_expiry ? coveragePeriod(emp.work_permit_fee_expiry, months) : "—",
-        String(months),
-        (months * rate).toFixed(2),
+        emp.work_permit_fee_expiry ? covPeriod(emp.work_permit_fee_expiry, mo) : "—",
+        String(mo), (mo * rt).toFixed(2),
       ]);
       colStyles = {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 24 },
-        3: { cellWidth: 22, halign: "center" },
-        4: { cellWidth: 50 },
-        5: { cellWidth: 10, halign: "center" },
-        6: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+        0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 40 }, 2: { cellWidth: 24 },
+        3: { cellWidth: 22, halign: "center" }, 4: { cellWidth: 50 },
+        5: { cellWidth: 10, halign: "center" }, 6: { cellWidth: 18, halign: "right", fontStyle: "bold" },
       };
-    } else if (invoiceType === "insurance") {
-      // 6 cols: 10+42+26+26+52+18 = 174
+    } else if (iType === "insurance") {
       tableHead = [["#", "Employee Name", "WP Number", "Insurance Expiry", "Coverage Period", "Amount (MVR)"]];
-      tableBody = selectedEmployees.map((emp, i) => [
-        String(i + 1),
-        emp.full_name,
-        emp.work_permit_number || "—",
+      tableBody = emps.map((emp, i) => [
+        String(i + 1), emp.full_name, emp.work_permit_number || "—",
         emp.insurance_expiry || "—",
-        emp.insurance_expiry ? coveragePeriod(emp.insurance_expiry, 12) : "—",
+        emp.insurance_expiry ? covPeriod(emp.insurance_expiry, 12) : "—",
         (850).toFixed(2),
       ]);
       colStyles = {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 26 },
-        3: { cellWidth: 26, halign: "center" },
-        4: { cellWidth: 52 },
+        0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 42 }, 2: { cellWidth: 26 },
+        3: { cellWidth: 26, halign: "center" }, 4: { cellWidth: 52 },
         5: { cellWidth: 18, halign: "right", fontStyle: "bold" },
       };
     } else {
-      // Quota — 6 cols: 8+44+26+30+48+18 = 174
-      const modeLabel = quotaMode === "annual"
-        ? "Annual"
-        : `${quotaMonths} mo.${quotaFirstMonth ? " (1st incl.)" : ""}`;
+      const modeLabel = qMode === "annual" ? "Annual" : `${qMo} mo.${qFirst ? " (1st incl.)" : ""}`;
       tableHead = [["#", "Employee Name", "WP Number", "Quota Slot No.", "Payment Mode", "Amount (MVR)"]];
-      tableBody = selectedEmployees.map((emp, i) => [
-        String(i + 1),
-        emp.full_name,
-        emp.work_permit_number || "—",
-        emp.quota_slot_number || "—",
-        modeLabel,
-        perEmp.toFixed(2),
+      tableBody = emps.map((emp, i) => [
+        String(i + 1), emp.full_name, emp.work_permit_number || "—",
+        emp.quota_slot_number || "—", modeLabel, pPerEmp.toFixed(2),
       ]);
       colStyles = {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 44 },
-        2: { cellWidth: 26 },
-        3: { cellWidth: 30 },
-        4: { cellWidth: 46 },
+        0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 44 }, 2: { cellWidth: 26 },
+        3: { cellWidth: 30 }, 4: { cellWidth: 46 },
         5: { cellWidth: 18, halign: "right", fontStyle: "bold" },
       };
     }
 
-    if (invoiceType === "combined") {
-      // ── Combined: draw one sub-table per active type ──
-      const n = selectedIds.size;
+    if (iType === "combined") {
       let secIndex = 0;
-      const sections = [
-        combineWpf       && "wpf",
-        combineInsurance && "insurance",
-        combineQuota     && "quota",
-      ].filter(Boolean);
-
+      const sections = [cwpf && "wpf", cins && "insurance", cquota && "quota"].filter(Boolean);
       for (const sec of sections) {
         secIndex++;
-        const letter = String.fromCharCode(64 + secIndex); // A, B, C
+        const letter = String.fromCharCode(64 + secIndex);
         if (sec === "wpf") {
           drawSectionLabel(`SECTION ${letter}  —  WORK PERMIT FEE`);
           autoTable(doc, {
             startY: y,
             head: [["#", "Employee Name", "WPF Expiry", "Mo.", "Amount (MVR)"]],
-            body: selectedEmployees.map((emp, i) => [
-              String(i + 1), emp.full_name,
-              emp.work_permit_fee_expiry || "—", String(months),
-              (months * rate).toFixed(2),
-            ]),
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.work_permit_fee_expiry||"—", String(mo), (mo*rt).toFixed(2)]),
             styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
-            columnStyles: {
-              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 100 },
-              2: { cellWidth: 26, halign: "center" }, 3: { cellWidth: 14, halign: "center" },
-              4: { cellWidth: 24, halign: "right", fontStyle: "bold" },
-            },
+            columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:100},2:{cellWidth:26,halign:"center"},3:{cellWidth:14,halign:"center"},4:{cellWidth:24,halign:"right",fontStyle:"bold"} },
             margin: { left: M, right: M },
           });
         } else if (sec === "insurance") {
@@ -4568,34 +4559,19 @@ const InvoiceTab = ({ isAdmin }) => {
           autoTable(doc, {
             startY: y,
             head: [["#", "Employee Name", "Insurance Expiry", "Amount (MVR)"]],
-            body: selectedEmployees.map((emp, i) => [
-              String(i + 1), emp.full_name,
-              emp.insurance_expiry || "—", (850).toFixed(2),
-            ]),
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.insurance_expiry||"—", (850).toFixed(2)]),
             styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
-            columnStyles: {
-              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 120 },
-              2: { cellWidth: 26, halign: "center" },
-              3: { cellWidth: 18, halign: "right", fontStyle: "bold" },
-            },
+            columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:120},2:{cellWidth:26,halign:"center"},3:{cellWidth:18,halign:"right",fontStyle:"bold"} },
             margin: { left: M, right: M },
           });
         } else {
-          const modeLabel = quotaMode === "annual" ? "Annual" : `${quotaMonths} mo${quotaFirstMonth ? " (1st incl.)" : ""}`;
           drawSectionLabel(`SECTION ${letter}  —  QUOTA SLOT FEE`);
           autoTable(doc, {
             startY: y,
             head: [["#", "Employee Name", "Quota Slot No.", "Mode", "Amount (MVR)"]],
-            body: selectedEmployees.map((emp, i) => [
-              String(i + 1), emp.full_name,
-              emp.quota_slot_number || "—", modeLabel, quotaPerEmp.toFixed(2),
-            ]),
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.quota_slot_number||"—", qMode==="annual"?"Annual":`${qMo}mo${qFirst?" (1st incl.)":""}`, qPerEmp.toFixed(2)]),
             styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
-            columnStyles: {
-              0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 86 },
-              2: { cellWidth: 30 }, 3: { cellWidth: 30 },
-              4: { cellWidth: 18, halign: "right", fontStyle: "bold" },
-            },
+            columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:86},2:{cellWidth:30},3:{cellWidth:30},4:{cellWidth:18,halign:"right",fontStyle:"bold"} },
             margin: { left: M, right: M },
           });
         }
@@ -4603,13 +4579,10 @@ const InvoiceTab = ({ isAdmin }) => {
       }
     } else {
       autoTable(doc, {
-        startY: y,
-        head: tableHead,
-        body: tableBody,
+        startY: y, head: tableHead, body: tableBody,
         styles: { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: [15,23,42], textColor: 255, fontStyle: "bold", fontSize: 8 },
-        columnStyles: colStyles,
-        alternateRowStyles: { fillColor: [248,250,252] },
+        columnStyles: colStyles, alternateRowStyles: { fillColor: [248,250,252] },
         margin: { left: M, right: M },
       });
       y = doc.lastAutoTable.finalY + 8;
@@ -4618,89 +4591,100 @@ const InvoiceTab = ({ isAdmin }) => {
     // ── Totals ───────────────────────────────────────────
     const tX = W - M - 80, tW = 80;
     const drawRow = (label, value, bg, textCol, bold, h) => {
-      doc.setFillColor(...bg);
-      doc.rect(tX, y, tW, h, "F");
-      doc.setFontSize(bold ? 9.5 : 8.5);
-      doc.setFont("helvetica", bold ? "bold" : "normal");
+      doc.setFillColor(...bg); doc.rect(tX, y, tW, h, "F");
+      doc.setFontSize(bold ? 9.5 : 8.5); doc.setFont("helvetica", bold ? "bold" : "normal");
       doc.setTextColor(...textCol);
       doc.text(label, tX + 4, y + h * 0.62);
       doc.text(value, W - M - 2, y + h * 0.62, { align: "right" });
       y += h + 1;
     };
 
-    const n = selectedIds.size;
-    if (invoiceType === "combined") {
-      if (combineWpf)       drawRow(`WPF: ${n} emp x ${months}mo x MVR ${rate}`, `MVR ${(n * months * rate).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
-      if (combineInsurance) drawRow(`Insurance: ${n} emp x MVR 850`, `MVR ${(n * 850).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
-      if (combineQuota)     drawRow(`Quota: ${n} x MVR ${quotaPerEmp.toFixed(2)}`, `MVR ${(n * quotaPerEmp).toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+    if (iType === "combined") {
+      if (cwpf)  drawRow(`WPF: ${n} emp x ${mo}mo x MVR ${rt}`, `MVR ${(n*mo*rt).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
+      if (cins)  drawRow(`Insurance: ${n} emp x MVR 850`, `MVR ${(n*850).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
+      if (cquota) drawRow(`Quota: ${n} x MVR ${qPerEmp.toFixed(2)}`, `MVR ${(n*qPerEmp).toFixed(2)}`, [248,250,252],[15,23,42],false,8);
     } else {
       let subtotalLabel;
-      if (invoiceType === "wpf") subtotalLabel = `WPF: ${n} emp x ${months} mo x MVR ${rate}`;
-      else if (invoiceType === "insurance") subtotalLabel = `Insurance: ${n} emp x MVR 850`;
-      else if (quotaMode === "annual") subtotalLabel = `Quota Slots: ${n} x MVR 2,000`;
-      else subtotalLabel = `Quota Slots: ${n} x MVR ${perEmp.toFixed(2)} (${quotaMonths} mo)`;
-      drawRow(subtotalLabel, `MVR ${subtotal.toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
+      if (iType === "wpf") subtotalLabel = `WPF: ${n} emp x ${mo} mo x MVR ${rt}`;
+      else if (iType === "insurance") subtotalLabel = `Insurance: ${n} emp x MVR 850`;
+      else if (qMode === "annual") subtotalLabel = `Quota Slots: ${n} x MVR 2,000`;
+      else subtotalLabel = `Quota Slots: ${n} x MVR ${pPerEmp.toFixed(2)} (${qMo} mo)`;
+      drawRow(subtotalLabel, `MVR ${subtotal.toFixed(2)}`, [248,250,252],[15,23,42],false,8);
     }
-    if (includeAgencyFee && agencyFeeAmt > 0)
-      drawRow("Agency Fee", `MVR ${agencyFeeAmt.toFixed(2)}`, [248,250,252], [15,23,42], false, 8);
-    drawRow("TOTAL DUE", `MVR ${grandTotal.toFixed(2)}`, [15,23,42], [255,255,255], true, 11);
-
+    if (incAF && afAmt > 0)
+      drawRow("Agency Fee", `MVR ${afAmt.toFixed(2)}`, [248,250,252],[15,23,42],false,8);
+    drawRow("TOTAL DUE", `MVR ${gtotal.toFixed(2)}`, [15,23,42],[255,255,255],true,11);
     y += 8;
 
-    // ── Signature & Stamp (only render if uploaded) ──────
+    // ── Signature & Stamp ────────────────────────────────
     const sigStampY = y;
     const sigImgW = 52, sigImgH = 20;
-
     if (sig) {
-      try {
-        const fmt = sig.includes("png") ? "PNG" : "JPEG";
-        doc.addImage(sig, fmt, M, sigStampY, sigImgW, sigImgH);
-      } catch {}
+      try { doc.addImage(sig, sig.includes("png")?"PNG":"JPEG", M, sigStampY, sigImgW, sigImgH); } catch {}
       doc.setDrawColor(100,116,139); doc.setLineWidth(0.3);
-      doc.line(M, sigStampY + sigImgH + 1, M + sigImgW, sigStampY + sigImgH + 1);
+      doc.line(M, sigStampY+sigImgH+1, M+sigImgW, sigStampY+sigImgH+1);
       doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
-      doc.text("Authorized Signature", M, sigStampY + sigImgH + 5);
+      doc.text("Authorized Signature", M, sigStampY+sigImgH+5);
     }
-
     if (stamp) {
-      try {
-        const fmt = stamp.includes("png") ? "PNG" : "JPEG";
-        doc.addImage(stamp, fmt, W - M - stampW, sigStampY, stampW, stampH);
-      } catch {}
+      try { doc.addImage(stamp, stamp.includes("png")?"PNG":"JPEG", W-M-stampW, sigStampY, stampW, stampH); } catch {}
       doc.setDrawColor(100,116,139); doc.setLineWidth(0.3);
-      doc.line(W - M - stampW, sigStampY + Math.max(sigImgH, stampH) + 1, W - M, sigStampY + Math.max(sigImgH, stampH) + 1);
+      doc.line(W-M-stampW, sigStampY+Math.max(sigImgH,stampH)+1, W-M, sigStampY+Math.max(sigImgH,stampH)+1);
       doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
-      doc.text("Company Stamp", W - M - stampW, sigStampY + Math.max(sigImgH, stampH) + 5);
+      doc.text("Company Stamp", W-M-stampW, sigStampY+Math.max(sigImgH,stampH)+5);
     }
-
-    y = (sig || stamp) ? sigStampY + Math.max(sig ? sigImgH : 0, stamp ? stampH : 0) + 12 : sigStampY;
+    y = (sig||stamp) ? sigStampY+Math.max(sig?sigImgH:0,stamp?stampH:0)+12 : sigStampY;
 
     // ── Notes ────────────────────────────────────────────
-    if (notes.trim()) {
-      doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 6;
+    if (notesText?.trim()) {
+      doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M,y,W-M,y); y+=6;
       doc.setFontSize(7); doc.setFont("helvetica","bold"); doc.setTextColor(100,116,139);
-      doc.text("NOTES", M, y); y += 4;
+      doc.text("NOTES", M, y); y+=4;
       doc.setFont("helvetica","normal"); doc.setTextColor(15,23,42); doc.setFontSize(8);
-      doc.text(doc.splitTextToSize(notes, W - 2 * M), M, y);
+      doc.text(doc.splitTextToSize(notesText, W-2*M), M, y);
     }
 
     // ── Footer ───────────────────────────────────────────
-    doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M, 283, W - M, 283);
+    doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(M, 283, W-M, 283);
     doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(148,163,184);
-    doc.text("Generated by DocGuard — Expatriate Compliance Management System", W / 2, 288, { align: "center" });
+    doc.text("Generated by DocGuard — Expatriate Compliance Management System", W/2, 288, { align: "center" });
 
-    doc.save(`Invoice_${invoiceNumber}_${(selectedEmployer?.name || "employer").replace(/\s+/g,"_")}.pdf`);
+    return { doc, filename: `Invoice_${invNumber}_${(employerName||"employer").replace(/\s+/g,"_")}.pdf` };
+  };
 
-    // Save to history
+  const generatePDF = () => {
+    const empSnap = selectedEmployees.map(e => ({
+      id: e.id, full_name: e.full_name,
+      work_permit_number: e.work_permit_number,
+      work_permit_fee_expiry: e.work_permit_fee_expiry,
+      insurance_expiry: e.insurance_expiry,
+      quota_slot_id: e.quota_slot_id,
+      quota_slot_number: e.quota_slot_number,
+      quota_slot_expiry: e.quota_slot_expiry,
+    }));
+    const afAmt = includeAgencyFee ? (parseFloat(agencyFee) || 0) : 0;
+    const ctx = {
+      invNumber: invoiceNumber, invDate: invoiceDate,
+      employerName: selectedEmployer?.name || "—",
+      invoiceType, emps: empSnap,
+      cfg: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
+      cwpf: combineWpf, cins: combineInsurance, cquota: combineQuota,
+      notesText: notes, gtotal: grandTotal,
+    };
+    const { doc, filename } = buildPDFDoc(ctx);
+    doc.save(filename);
+
+    // Save to history (with full snapshot for replay + expiry update)
     const record = {
       id: Date.now(),
-      number: invoiceNumber,
-      date: invoiceDate,
+      number: invoiceNumber, date: invoiceDate,
       employerName: selectedEmployer?.name || "—",
-      invoiceType,
-      employeeCount: selectedIds.size,
-      grandTotal,
-      status: "pending",
+      invoiceType, employeeCount: selectedIds.size,
+      grandTotal, status: "pending",
+      employees: empSnap,
+      config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
+      combineWpf, combineInsurance, combineQuota,
+      notes,
     };
     const newHistory = [record, ...history];
     setHistory(newHistory);
@@ -4713,6 +4697,111 @@ const InvoiceTab = ({ isAdmin }) => {
     const _usedSeq = Number(localStorage.getItem(_key) || 0) + 1;
     localStorage.setItem(_key, String(_usedSeq));
     setInvoiceNumber(`INV-${_ym}-${String(_usedSeq + 1).padStart(3,"0")}`);
+  };
+
+  const replayPDF = (record) => {
+    const cfg = record.config || { months: 1, rate: 350, quotaMode: "annual", quotaMonths: 1, quotaFirstMonth: true, includeAgencyFee: false, agencyFeeAmt: 0 };
+    const { doc, filename } = buildPDFDoc({
+      invNumber: record.number, invDate: record.date,
+      employerName: record.employerName,
+      invoiceType: record.invoiceType,
+      emps: record.employees || [],
+      cfg,
+      cwpf: record.combineWpf, cins: record.combineInsurance, cquota: record.combineQuota,
+      notesText: record.notes || "",
+      gtotal: record.grandTotal,
+    });
+    doc.save(filename);
+  };
+
+  const handleMarkPaid = (inv) => {
+    if (inv.status === "paid") {
+      // Toggle back to pending without expiry changes
+      const updated = history.map(r => r.id === inv.id ? { ...r, status: "pending" } : r);
+      setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+      return;
+    }
+    setMarkPaidError(null);
+    setMarkPaidConfirm(inv);
+  };
+
+  const confirmMarkPaid = async (updateExpiries) => {
+    const inv = markPaidConfirm;
+    if (!inv) return;
+    setMarkPaidLoading(true); setMarkPaidError(null);
+    try {
+      if (updateExpiries && inv.employees?.length) {
+        const needsWpf      = inv.invoiceType === "wpf"       || (inv.invoiceType === "combined" && inv.combineWpf);
+        const needsInsurance = inv.invoiceType === "insurance" || (inv.invoiceType === "combined" && inv.combineInsurance);
+        const needsQuota    = inv.invoiceType === "quota"      || (inv.invoiceType === "combined" && inv.combineQuota);
+        const cfg = inv.config || {};
+        const errors = [];
+
+        for (const emp of inv.employees) {
+          const payload = {};
+          const today = new Date();
+
+          if (needsWpf) {
+            const base = emp.work_permit_fee_expiry && new Date(emp.work_permit_fee_expiry) > today
+              ? new Date(emp.work_permit_fee_expiry) : new Date(inv.date);
+            base.setMonth(base.getMonth() + (cfg.months || 1));
+            payload.work_permit_fee_expiry = base.toISOString().split("T")[0];
+          }
+          if (needsInsurance) {
+            const base = emp.insurance_expiry && new Date(emp.insurance_expiry) > today
+              ? new Date(emp.insurance_expiry) : new Date(inv.date);
+            base.setFullYear(base.getFullYear() + 1);
+            payload.insurance_expiry = base.toISOString().split("T")[0];
+          }
+
+          if (Object.keys(payload).length > 0) {
+            try {
+              const res = await apiFetch(`${API}/employees/${emp.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                errors.push(`${emp.full_name}: ${d.detail?.message || d.detail || "update failed"}`);
+              }
+            } catch (e) { errors.push(`${emp.full_name}: ${e.message}`); }
+          }
+
+          if (needsQuota && emp.quota_slot_id) {
+            const base = emp.quota_slot_expiry && new Date(emp.quota_slot_expiry) > today
+              ? new Date(emp.quota_slot_expiry) : new Date(inv.date);
+            if (cfg.quotaMode === "annual") base.setFullYear(base.getFullYear() + 1);
+            else base.setMonth(base.getMonth() + (cfg.quotaMonths || 1));
+            try {
+              const res = await apiFetch(`${API}/quota-slots/${emp.quota_slot_id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ expiry_date: base.toISOString().split("T")[0] }),
+              });
+              if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                errors.push(`${emp.full_name} (quota): ${d.detail?.message || d.detail || "update failed"}`);
+              }
+            } catch (e) { errors.push(`${emp.full_name} (quota): ${e.message}`); }
+          }
+        }
+
+        if (errors.length > 0) {
+          setMarkPaidError(errors.join("\n"));
+          setMarkPaidLoading(false);
+          return;
+        }
+      }
+
+      const updated = history.map(r => r.id === inv.id ? { ...r, status: "paid" } : r);
+      setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+      setMarkPaidConfirm(null);
+    } catch (e) {
+      setMarkPaidError(e.message);
+    } finally {
+      setMarkPaidLoading(false);
+    }
   };
 
   const inSt = { fontFamily: C.sans, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.inputBg, color: C.text, outline: "none" };
@@ -5098,7 +5187,7 @@ const InvoiceTab = ({ isAdmin }) => {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: C.sans, fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: "#f8fafc" }}>
-                        {["Invoice No.","Date","Employer","Type","Employees","Total (MVR)","Status","",""].map(h => (
+                        {["Invoice No.","Date","Employer","Type","Employees","Total (MVR)","Status","Actions"].map(h => (
                           <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
@@ -5128,22 +5217,24 @@ const InvoiceTab = ({ isAdmin }) => {
                             </span>
                           </td>
                           <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                            <button onClick={() => {
-                              const updated = history.map(r => r.id === inv.id ? { ...r, status: r.status === "paid" ? "pending" : "paid" } : r);
-                              setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
-                            }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.textSub, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
-                              Mark {inv.status === "paid" ? "Pending" : "Paid"}
-                            </button>
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <button onClick={() => {
-                              if (window.confirm(`Delete invoice ${inv.number}?`)) {
-                                const updated = history.filter(r => r.id !== inv.id);
-                                setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
-                              }
-                            }} style={{ background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
-                              Delete
-                            </button>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => replayPDF(inv)}
+                                style={{ background: "none", border: `1px solid ${C.border}`, color: C.accent, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
+                                View
+                              </button>
+                              <button onClick={() => handleMarkPaid(inv)}
+                                style={{ background: "none", border: `1px solid ${C.border}`, color: C.textSub, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
+                                Mark {inv.status === "paid" ? "Pending" : "Paid"}
+                              </button>
+                              <button onClick={() => {
+                                if (window.confirm(`Delete invoice ${inv.number}?`)) {
+                                  const updated = history.filter(r => r.id !== inv.id);
+                                  setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+                                }
+                              }} style={{ background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -5166,6 +5257,116 @@ const InvoiceTab = ({ isAdmin }) => {
           })()}
         </div>
       )}{/* end history tab */}
+
+      {/* ══ MARK PAID MODAL ══ */}
+      {markPaidConfirm && (() => {
+        const inv = markPaidConfirm;
+        const cfg = inv.config || {};
+        const needsWpf      = inv.invoiceType === "wpf"       || (inv.invoiceType === "combined" && inv.combineWpf);
+        const needsInsurance = inv.invoiceType === "insurance" || (inv.invoiceType === "combined" && inv.combineInsurance);
+        const needsQuota    = inv.invoiceType === "quota"      || (inv.invoiceType === "combined" && inv.combineQuota);
+        const hasEmpData    = inv.employees?.length > 0;
+        const today = new Date();
+
+        const calcWpfExpiry = (emp) => {
+          const base = emp.work_permit_fee_expiry && new Date(emp.work_permit_fee_expiry) > today
+            ? new Date(emp.work_permit_fee_expiry) : new Date(inv.date);
+          base.setMonth(base.getMonth() + (cfg.months || 1));
+          return base.toISOString().split("T")[0];
+        };
+        const calcInsExpiry = (emp) => {
+          const base = emp.insurance_expiry && new Date(emp.insurance_expiry) > today
+            ? new Date(emp.insurance_expiry) : new Date(inv.date);
+          base.setFullYear(base.getFullYear() + 1);
+          return base.toISOString().split("T")[0];
+        };
+        const calcQuotaExpiry = (emp) => {
+          const base = emp.quota_slot_expiry && new Date(emp.quota_slot_expiry) > today
+            ? new Date(emp.quota_slot_expiry) : new Date(inv.date);
+          if (cfg.quotaMode === "annual") base.setFullYear(base.getFullYear() + 1);
+          else base.setMonth(base.getMonth() + (cfg.quotaMonths || 1));
+          return base.toISOString().split("T")[0];
+        };
+
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <div style={{ background: C.cardBg, borderRadius: 14, padding: "28px 30px", width: "100%", maxWidth: 560, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)", border: `1px solid ${C.border}` }}>
+              <div style={{ fontFamily: C.sans, fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4 }}>Mark Invoice as Paid</div>
+              <div style={{ fontFamily: C.sans, fontSize: 12, color: C.textSub, marginBottom: 20 }}>{inv.number} · {inv.employerName}</div>
+
+              {hasEmpData && (needsWpf || needsInsurance || needsQuota) ? (
+                <>
+                  <div style={{ fontFamily: C.sans, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 10 }}>
+                    The following expiry dates will be updated:
+                  </div>
+                  <div style={{ background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: C.sans }}>
+                      <thead>
+                        <tr style={{ background: "#f1f5f9" }}>
+                          <th style={{ padding: "8px 12px", textAlign: "left", color: C.textSub, fontWeight: 600 }}>Employee</th>
+                          {needsWpf       && <th style={{ padding: "8px 12px", textAlign: "center", color: C.textSub, fontWeight: 600 }}>WPF Expiry →</th>}
+                          {needsInsurance && <th style={{ padding: "8px 12px", textAlign: "center", color: C.textSub, fontWeight: 600 }}>Insurance →</th>}
+                          {needsQuota     && <th style={{ padding: "8px 12px", textAlign: "center", color: C.textSub, fontWeight: 600 }}>Quota →</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inv.employees.map(emp => (
+                          <tr key={emp.id} style={{ borderTop: `1px solid ${C.borderLight}` }}>
+                            <td style={{ padding: "7px 12px", color: C.text, fontWeight: 500 }}>{emp.full_name}</td>
+                            {needsWpf       && <td style={{ padding: "7px 12px", textAlign: "center", fontFamily: C.mono, color: "#15803d", fontWeight: 600 }}>{calcWpfExpiry(emp)}</td>}
+                            {needsInsurance && <td style={{ padding: "7px 12px", textAlign: "center", fontFamily: C.mono, color: "#15803d", fontWeight: 600 }}>{calcInsExpiry(emp)}</td>}
+                            {needsQuota     && <td style={{ padding: "7px 12px", textAlign: "center", fontFamily: C.mono, color: emp.quota_slot_id ? "#15803d" : C.textMuted, fontWeight: 600 }}>{emp.quota_slot_id ? calcQuotaExpiry(emp) : "no slot"}</td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {markPaidError && (
+                    <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontFamily: C.sans, fontSize: 11, color: "#b91c1c", whiteSpace: "pre-wrap" }}>{markPaidError}</div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    <button onClick={() => { setMarkPaidConfirm(null); setMarkPaidError(null); }}
+                      disabled={markPaidLoading}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "none", color: C.textSub, fontFamily: C.sans, fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                    <button onClick={() => confirmMarkPaid(false)}
+                      disabled={markPaidLoading}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "none", color: C.text, fontFamily: C.sans, fontSize: 12, cursor: "pointer" }}>
+                      Mark Paid Only
+                    </button>
+                    <button onClick={() => confirmMarkPaid(true)}
+                      disabled={markPaidLoading}
+                      style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: C.accent, color: "#fff", fontFamily: C.sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {markPaidLoading ? "Updating…" : "Mark Paid + Update Expiries"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontFamily: C.sans, fontSize: 13, color: C.textSub, marginBottom: 20 }}>
+                    {!hasEmpData ? "No employee data saved with this invoice (older record). This will only update the payment status." : "No expiry fields apply to this invoice type."}
+                  </div>
+                  {markPaidError && (
+                    <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontFamily: C.sans, fontSize: 11, color: "#b91c1c" }}>{markPaidError}</div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => { setMarkPaidConfirm(null); setMarkPaidError(null); }}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "none", color: C.textSub, fontFamily: C.sans, fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                    <button onClick={() => confirmMarkPaid(false)}
+                      disabled={markPaidLoading}
+                      style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: C.accent, color: "#fff", fontFamily: C.sans, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {markPaidLoading ? "Updating…" : "Mark Paid"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
