@@ -3084,15 +3084,28 @@ const LoginScreen = ({ onLogin }) => {
       minHeight: "100vh",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: C.sans,
-      background: "linear-gradient(135deg, #1a0000 0%, #7f1d1d 45%, #450a0a 100%)",
+      background: "#111111",
       padding: 24,
+      position: "relative",
+      overflow: "hidden",
     }}>
+      {/* Red radial glow behind logo area */}
+      <div style={{
+        position: "absolute",
+        top: "20%", left: "50%",
+        transform: "translateX(-50%)",
+        width: 480, height: 480,
+        borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(185,28,28,0.25) 0%, rgba(185,28,28,0.08) 45%, transparent 70%)",
+        pointerEvents: "none",
+      }} />
+
       {/* Card */}
-      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, position: "relative" }}>
 
         {/* Logo + brand */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
-          <img src={appLogo} alt="DocGuard" style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 4px 16px rgba(220,38,38,0.4))" }} />
+          <img src={appLogo} alt="DocGuard" style={{ width: 80, height: 80, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 0 24px rgba(220,38,38,0.6))" }} />
           <div style={{ color: "#fff", fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em" }}>DocGuard</div>
           <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginTop: 4, letterSpacing: "0.04em" }}>Expatriate Compliance Management</div>
         </div>
