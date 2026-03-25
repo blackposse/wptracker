@@ -2651,13 +2651,13 @@ const EmployersTab = () => {
 
 // ── CSV Import Modal ──────────────────────────────────────
 const CSV_UPDATE_TEMPLATE = [
-  "employee_number,full_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
+  "employee_number,full_name,passport_number,work_permit_number,nationality,occupation,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
   "EMP-100,John Smith,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
   "EMP-101,,,,,,,2026-07-20,2026-10-01,2026-04-20,,",
 ].join("\n");
 
 const CSV_CREATE_TEMPLATE = [
-  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,job_title,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
+  "full_name,employer_name,site_name,passport_number,work_permit_number,nationality,occupation,passport_expiry,insurance_expiry,work_permit_fee_expiry,medical_expiry,quota_slot_number,quota_slot_expiry",
   "John Smith,Gulf Construction LLC,Dubai Marina Site,A12345678,WP-2024-00123,British,Engineer,2028-06-15,2026-12-01,2026-09-01,2026-03-15,QS00301620,2026-09-30",
   "Jane Doe,Gulf Construction LLC,Dubai Marina Site,B98765432,WP-2024-00124,Filipino,Technician,2029-03-20,2027-06-10,2027-03-20,2027-03-20,,",
 ].join("\n");
@@ -2702,7 +2702,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "passport_number",        note: "Passport document number — checked for duplicates" },
     { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123)" },
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino" },
-    { col: "job_title",              note: "e.g. Site Supervisor, Electrician" },
+    { col: "occupation",             note: "Job title / occupation — e.g. Site Supervisor, Electrician" },
     { col: "passport_expiry",        note: "Date format: YYYY-MM-DD" },
     { col: "insurance_expiry",       note: "Date format: YYYY-MM-DD" },
     { col: "work_permit_fee_expiry", note: "Date format: YYYY-MM-DD" },
@@ -2717,7 +2717,7 @@ const CsvImportModal = ({ onClose, onDone }) => {
     { col: "passport_number",        note: "Passport document number — checked for duplicates; leave blank to keep" },
     { col: "work_permit_number",     note: "Work permit document number (e.g. WP-2024-00123); leave blank to keep" },
     { col: "nationality",            note: "e.g. Indian, Pakistani, Filipino — leave blank to keep current" },
-    { col: "job_title",              note: "e.g. Site Supervisor, Electrician — leave blank to keep current" },
+    { col: "occupation",             note: "Job title / occupation — e.g. Site Supervisor, Electrician — leave blank to keep current" },
     { col: "passport_expiry",        note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "insurance_expiry",       note: "YYYY-MM-DD — leave blank to keep current date" },
     { col: "work_permit_fee_expiry", note: "YYYY-MM-DD — leave blank to keep current date" },

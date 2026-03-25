@@ -239,7 +239,7 @@ async def delete_employee(employee_id: int, db: AsyncSession = Depends(get_db), 
     await db.commit()
 
 
-DATE_FIELDS = {"passport_expiry", "visa_stamp_expiry", "insurance_expiry", "work_permit_fee_expiry", "medical_expiry"}
+DATE_FIELDS = {"passport_expiry", "insurance_expiry", "work_permit_fee_expiry", "medical_expiry"}
 UPDATABLE_FIELDS = {"full_name", "passport_number", "work_permit_number", "nationality", "job_title"} | DATE_FIELDS
 
 import re as _re
@@ -295,9 +295,8 @@ FIELD_LABELS = {
     "passport_number": "Passport Number",
     "work_permit_number": "Work Permit Number",
     "nationality": "Nationality",
-    "job_title": "Job Title",
+    "job_title": "Job Title / Occupation",
     "passport_expiry": "Passport Expiry",
-    "visa_stamp_expiry": "Visa Stamp Expiry",
     "insurance_expiry": "Insurance Expiry",
     "work_permit_fee_expiry": "Work Permit Fee Expiry",
     "medical_expiry": "Medical Expiry",
@@ -337,6 +336,10 @@ async def bulk_update_employees(
         if not emp:
             not_found.append(emp_num)
             continue
+
+        # Allow "occupation" as an alias for "job_title"
+        if "occupation" in row and "job_title" not in row:
+            row["job_title"] = row["occupation"]
 
         changes = []
         for field in UPDATABLE_FIELDS:
@@ -492,6 +495,10 @@ async def bulk_create_employees(
             max_id += 1
             emp_number = f"EMP-{100 + max_id}"
 
+        # occupation is an alias for job_title
+        if "occupation" in row and "job_title" not in row:
+            row["job_title"] = row["occupation"]
+
         # Resolve optional quota slot (extract QS number from composite values)
         quota_slot_id = None
         slot_number_raw = _extract_slot_number(row.get("quota_slot_number"))
@@ -524,7 +531,6 @@ async def bulk_create_employees(
             nationality=(row.get("nationality") or "").strip() or None,
             job_title=(row.get("job_title") or "").strip() or None,
             passport_expiry=_parse_date_flexible(row.get("passport_expiry")),
-            visa_stamp_expiry=_parse_date_flexible(row.get("visa_stamp_expiry")),
             insurance_expiry=_parse_date_flexible(row.get("insurance_expiry")),
             work_permit_fee_expiry=_parse_date_flexible(row.get("work_permit_fee_expiry")),
             medical_expiry=_parse_date_flexible(row.get("medical_expiry")),
