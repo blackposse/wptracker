@@ -1150,7 +1150,7 @@ const SiteCard = ({ site, onViewEmployees, onSlotsChanged, onSiteUpdated }) => {
       boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-        <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, flex: 1 }}>{site.site_name}</div>
+        <div style={{ color: C.text, fontFamily: C.sans, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={site.site_name}>{site.site_name}</div>
         {atCapacity && <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "2px 10px", borderRadius: 20, fontSize: 10, fontFamily: C.sans, fontWeight: 700 }}>QUOTA FULL</span>}
         <button
           onClick={() => setShowSlots(true)}
