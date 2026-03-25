@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models.models import Employer, Site, QuotaSlot, Employee, AuditLog, User
+from app.models.models import Employer, Site, QuotaSlot, Employee, AuditLog, User, InvoiceRecord
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/backup", tags=["Backup"])
@@ -32,12 +32,13 @@ async def export_backup(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),   # any authenticated user can download
 ):
-    employers   = (await db.execute(select(Employer))).scalars().all()
-    sites       = (await db.execute(select(Site))).scalars().all()
-    quota_slots = (await db.execute(select(QuotaSlot))).scalars().all()
-    employees   = (await db.execute(select(Employee))).scalars().all()
-    audit_logs  = (await db.execute(select(AuditLog))).scalars().all()
-    users       = (await db.execute(select(User))).scalars().all()
+    employers    = (await db.execute(select(Employer))).scalars().all()
+    sites        = (await db.execute(select(Site))).scalars().all()
+    quota_slots  = (await db.execute(select(QuotaSlot))).scalars().all()
+    employees    = (await db.execute(select(Employee))).scalars().all()
+    audit_logs   = (await db.execute(select(AuditLog))).scalars().all()
+    users        = (await db.execute(select(User))).scalars().all()
+    inv_records  = (await db.execute(select(InvoiceRecord))).scalars().all()
 
     return {
         "version": 1,
@@ -104,17 +105,31 @@ async def export_backup(
             }
             for a in audit_logs
         ],
+        "invoice_records": [
+            {
+                "id": r.id, "number": r.number, "date": r.date,
+                "employer_name": r.employer_name, "invoice_type": r.invoice_type,
+                "employee_count": r.employee_count, "grand_total": r.grand_total,
+                "status": r.status, "combine_wpf": r.combine_wpf,
+                "combine_insurance": r.combine_insurance, "combine_quota": r.combine_quota,
+                "notes": r.notes, "employees_snapshot": r.employees_snapshot,
+                "config_json": r.config_json, "created_by": r.created_by,
+                "created_at": _d(r.created_at),
+            }
+            for r in inv_records
+        ],
     }
 
 
 class BackupPayload(BaseModel):
     version: int
-    employers:   list[dict[str, Any]] = []
-    sites:       list[dict[str, Any]] = []
-    quota_slots: list[dict[str, Any]] = []
-    employees:   list[dict[str, Any]] = []
-    users:       list[dict[str, Any]] = []
-    audit_logs:  list[dict[str, Any]] = []
+    employers:       list[dict[str, Any]] = []
+    sites:           list[dict[str, Any]] = []
+    quota_slots:     list[dict[str, Any]] = []
+    employees:       list[dict[str, Any]] = []
+    users:           list[dict[str, Any]] = []
+    audit_logs:      list[dict[str, Any]] = []
+    invoice_records: list[dict[str, Any]] = []
 
 
 @router.post("/restore")
@@ -129,7 +144,7 @@ async def restore_backup(
 
     # ── 1. Wipe in FK-safe order ──────────────────────────
     await db.execute(text(
-        "TRUNCATE audit_logs, employees, quota_slots, sites, employers, users RESTART IDENTITY CASCADE"
+        "TRUNCATE invoice_records, audit_logs, employees, quota_slots, sites, employers, users RESTART IDENTITY CASCADE"
     ))
     await db.commit()
 
@@ -208,13 +223,29 @@ async def restore_backup(
     await db.commit()
 
     # ── 3. Reset sequences so new inserts don't collide ──
+    for r in payload.invoice_records:
+        db.add(InvoiceRecord(
+            id=r["id"], number=r["number"], date=r["date"],
+            employer_name=r.get("employer_name"), invoice_type=r["invoice_type"],
+            employee_count=r.get("employee_count", 0), grand_total=r.get("grand_total", 0.0),
+            status=r.get("status", "pending"),
+            combine_wpf=r.get("combine_wpf", False),
+            combine_insurance=r.get("combine_insurance", False),
+            combine_quota=r.get("combine_quota", False),
+            notes=r.get("notes"), employees_snapshot=r.get("employees_snapshot"),
+            config_json=r.get("config_json"), created_by=r.get("created_by"),
+        ))
+    await db.flush()
+    await db.commit()
+
     for table, col in [
-        ("employers",  "employers_id_seq"),
-        ("sites",      "sites_id_seq"),
-        ("quota_slots","quota_slots_id_seq"),
-        ("employees",  "employees_id_seq"),
-        ("users",      "users_id_seq"),
-        ("audit_logs", "audit_logs_id_seq"),
+        ("employers",       "employers_id_seq"),
+        ("sites",           "sites_id_seq"),
+        ("quota_slots",     "quota_slots_id_seq"),
+        ("employees",       "employees_id_seq"),
+        ("users",           "users_id_seq"),
+        ("audit_logs",      "audit_logs_id_seq"),
+        ("invoice_records", "invoice_records_id_seq"),
     ]:
         await db.execute(text(
             f"SELECT setval('{col}', COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)"

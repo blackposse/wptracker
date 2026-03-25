@@ -10,7 +10,7 @@ import os
 
 from app.database import init_db, engine, AsyncSessionLocal
 from app.models.models import Employer, Site, Employee, AuditLog, User, QuotaSlot
-from app.routers import employees, employers, sites, alerts, dashboard, admin, quota_slots, backup
+from app.routers import employees, employers, sites, alerts, dashboard, admin, quota_slots, backup, invoices
 from app.routers import auth as auth_router
 from app.auth import hash_password
 from sqlalchemy import select, func, text
@@ -352,6 +352,7 @@ app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(quota_slots.router)
 app.include_router(backup.router)
+app.include_router(invoices.router)
 
 
 @app.get("/health")

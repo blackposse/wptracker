@@ -4415,28 +4415,39 @@ const InvoiceTab = ({ isAdmin }) => {
   const [quotaFirstMonth, setQuotaFirstMonth] = useState(true);
   const [includeAgencyFee, setIncludeAgencyFee] = useState(false);
   const [agencyFee, setAgencyFee]             = useState("");
-  const [invoiceNumber, setInvoiceNumber]     = useState(() => {
-    const d = new Date();
-    const ym = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}`;
-    const lastSeq = Number(localStorage.getItem(`inv_seq_${ym}`) || 0);
-    return `INV-${ym}-${String(lastSeq + 1).padStart(3,"0")}`;
-  });
+  const [invoiceNumber, setInvoiceNumber]     = useState("INV-……");
   const [invoiceDate, setInvoiceDate]         = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes]                     = useState("");
   const [selectedIds, setSelectedIds]         = useState(new Set());
   const [search, setSearch]                   = useState("");
-  const [history, setHistory]                 = useState(() => {
-    try { return JSON.parse(localStorage.getItem("inv_history") || "[]"); } catch { return []; }
-  });
+  const [history, setHistory]                 = useState([]);
+  const [histLoading, setHistLoading]         = useState(false);
   const [invoiceSubTab, setInvoiceSubTab]     = useState("generate");
   const [histSearch, setHistSearch]           = useState("");
   const [histStatus, setHistStatus]           = useState("all");
   const [histType, setHistType]               = useState("all");
   const [histPage, setHistPage]               = useState(1);
   const HIST_PER_PAGE = 15;
-  const [markPaidConfirm, setMarkPaidConfirm] = useState(null);  // invoice record pending confirmation
+  const [markPaidConfirm, setMarkPaidConfirm] = useState(null);
   const [markPaidLoading, setMarkPaidLoading] = useState(false);
   const [markPaidError, setMarkPaidError]     = useState(null);
+
+  // Load invoice history from server and fetch next invoice number
+  const loadHistory = () => {
+    setHistLoading(true);
+    apiFetch(`${API}/invoices/`)
+      .then(r => r.json())
+      .then(data => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => setHistory([]))
+      .finally(() => setHistLoading(false));
+  };
+  const loadNextNumber = () => {
+    apiFetch(`${API}/invoices/next-number`)
+      .then(r => r.json())
+      .then(d => { if (d.number) setInvoiceNumber(d.number); })
+      .catch(() => {});
+  };
+  useEffect(() => { loadHistory(); loadNextNumber(); }, []);
 
   useEffect(() => {
     if (!employerId) { setEmployees([]); setSelectedIds(new Set()); setSearch(""); return; }
@@ -4787,7 +4798,7 @@ const InvoiceTab = ({ isAdmin }) => {
     return { doc, filename: `Invoice_${invNumber}_${(employerName||"employer").replace(/\s+/g,"_")}.pdf` };
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     const empSnap = selectedEmployees.map(e => ({
       id: e.id, full_name: e.full_name,
       work_permit_number: e.work_permit_number,
@@ -4809,29 +4820,29 @@ const InvoiceTab = ({ isAdmin }) => {
     const { doc, filename } = buildPDFDoc(ctx);
     doc.save(filename);
 
-    // Save to history (with full snapshot for replay + expiry update)
-    const record = {
-      id: Date.now(),
-      number: invoiceNumber, date: invoiceDate,
-      employerName: selectedEmployer?.name || "—",
-      invoiceType, employeeCount: selectedIds.size,
-      grandTotal, status: "pending",
-      employees: empSnap,
-      config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
-      combineWpf, combineInsurance, combineQuota,
-      notes,
-    };
-    const newHistory = [record, ...history];
-    setHistory(newHistory);
-    localStorage.setItem("inv_history", JSON.stringify(newHistory));
+    // Save to server
+    try {
+      const res = await apiFetch(`${API}/invoices/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          number: invoiceNumber, date: invoiceDate,
+          employerName: selectedEmployer?.name || "—",
+          invoiceType, employeeCount: selectedIds.size,
+          grandTotal,
+          combineWpf, combineInsurance, combineQuota,
+          notes, employees: empSnap,
+          config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
+        }),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setHistory(prev => [saved, ...prev]);
+      }
+    } catch {}
 
-    // Advance invoice number sequence
-    const _d = new Date();
-    const _ym = `${_d.getFullYear()}${String(_d.getMonth()+1).padStart(2,"0")}`;
-    const _key = `inv_seq_${_ym}`;
-    const _usedSeq = Number(localStorage.getItem(_key) || 0) + 1;
-    localStorage.setItem(_key, String(_usedSeq));
-    setInvoiceNumber(`INV-${_ym}-${String(_usedSeq + 1).padStart(3,"0")}`);
+    // Get next invoice number from server
+    loadNextNumber();
   };
 
   const replayPDF = (record) => {
@@ -4849,11 +4860,20 @@ const InvoiceTab = ({ isAdmin }) => {
     doc.save(filename);
   };
 
-  const handleMarkPaid = (inv) => {
+  const handleMarkPaid = async (inv) => {
     if (inv.status === "paid") {
-      // Toggle back to pending without expiry changes
-      const updated = history.map(r => r.id === inv.id ? { ...r, status: "pending" } : r);
-      setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+      // Toggle back to pending — no expiry changes needed
+      try {
+        const res = await apiFetch(`${API}/invoices/${inv.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "pending" }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setHistory(prev => prev.map(r => r.id === inv.id ? updated : r));
+        }
+      } catch {}
       return;
     }
     setMarkPaidError(null);
@@ -4929,8 +4949,15 @@ const InvoiceTab = ({ isAdmin }) => {
         }
       }
 
-      const updated = history.map(r => r.id === inv.id ? { ...r, status: "paid" } : r);
-      setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+      const res = await apiFetch(`${API}/invoices/${inv.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setHistory(prev => prev.map(r => r.id === inv.id ? updated : r));
+      }
       setMarkPaidConfirm(null);
     } catch (e) {
       setMarkPaidError(e.message);
@@ -5294,16 +5321,23 @@ const InvoiceTab = ({ isAdmin }) => {
               <option value="combined">Combined</option>
             </select>
             {isAdmin && (
-              <button onClick={() => { if (window.confirm("Clear all invoice history?")) { setHistory([]); localStorage.removeItem("inv_history"); } }}
-                style={{ marginLeft: "auto", background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>
+              <button onClick={async () => {
+                if (window.confirm("Clear all invoice history?")) {
+                  await apiFetch(`${API}/invoices/`, { method: "DELETE" });
+                  setHistory([]);
+                }
+              }} style={{ marginLeft: "auto", background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: C.sans, fontSize: 12 }}>
                 Clear All
               </button>
             )}
           </div>
-          {(() => {
+          {histLoading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: C.textMuted, fontFamily: C.sans, fontSize: 13 }}>Loading invoice history…</div>
+          ) : null}
+          {!histLoading && (() => {
             const filtered = history.filter(inv => {
               const q = histSearch.toLowerCase();
-              const matchQ = !q || inv.number.toLowerCase().includes(q) || inv.employerName.toLowerCase().includes(q);
+              const matchQ = !q || inv.number?.toLowerCase().includes(q) || inv.employerName?.toLowerCase().includes(q);
               const matchS = histStatus === "all" || inv.status === histStatus;
               const matchT = histType === "all" || inv.invoiceType === histType;
               return matchQ && matchS && matchT;
@@ -5361,10 +5395,10 @@ const InvoiceTab = ({ isAdmin }) => {
                                 style={{ background: "none", border: `1px solid ${C.border}`, color: C.textSub, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
                                 Mark {inv.status === "paid" ? "Pending" : "Paid"}
                               </button>
-                              <button onClick={() => {
+                              <button onClick={async () => {
                                 if (window.confirm(`Delete invoice ${inv.number}?`)) {
-                                  const updated = history.filter(r => r.id !== inv.id);
-                                  setHistory(updated); localStorage.setItem("inv_history", JSON.stringify(updated));
+                                  await apiFetch(`${API}/invoices/${inv.id}`, { method: "DELETE" });
+                                  setHistory(prev => prev.filter(r => r.id !== inv.id));
                                 }
                               }} style={{ background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: C.sans, fontSize: 11, whiteSpace: "nowrap" }}>
                                 Delete

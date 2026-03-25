@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Date, DateTime, ForeignKey, UniqueConstraint,
-    CheckConstraint, Index, func, Text, Boolean
+    CheckConstraint, Index, func, Text, Boolean, Float
 )
 from sqlalchemy.orm import relationship, column_property
 from sqlalchemy.ext.declarative import declarative_base
@@ -119,3 +119,24 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False, server_default="false")
+
+
+class InvoiceRecord(Base):
+    __tablename__ = "invoice_records"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    number         = Column(String(100), nullable=False, index=True)
+    date           = Column(String(20), nullable=False)          # YYYY-MM-DD stored as string
+    employer_name  = Column(String(255))
+    invoice_type   = Column(String(50), nullable=False)          # wpf|insurance|quota|combined
+    employee_count = Column(Integer, default=0)
+    grand_total    = Column(Float, default=0.0)
+    status         = Column(String(20), nullable=False, default="pending")
+    combine_wpf       = Column(Boolean, default=False)
+    combine_insurance = Column(Boolean, default=False)
+    combine_quota     = Column(Boolean, default=False)
+    notes              = Column(Text)
+    employees_snapshot = Column(Text)   # JSON string — employee data at time of generation
+    config_json        = Column(Text)   # JSON string — invoice config (months, rate, etc.)
+    created_by   = Column(String(100))
+    created_at   = Column(DateTime(timezone=True), server_default=func.now(), index=True)
