@@ -3934,6 +3934,7 @@ const SettingsTab = () => {
   const [message, setMessage]               = useState(null); // { type: "success"|"error", text }
   const [confirmRestore, setConfirmRestore] = useState(null);
   const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreResult,  setRestoreResult]  = useState(null); // { ok: bool, text: string }
   const [archiving, setArchiving]           = useState(false);
 
   // Invoice branding state (persisted in localStorage)
@@ -4034,6 +4035,7 @@ const SettingsTab = () => {
   const handleRestore = async () => {
     if (!confirmRestore) return;
     setRestoreLoading(true);
+    setRestoreResult(null);
     try {
       const res = await apiFetch(`${API}/backup/restore`, {
         method: "POST",
@@ -4041,13 +4043,18 @@ const SettingsTab = () => {
         body: JSON.stringify(confirmRestore),
       });
       const d = await res.json();
-      if (!res.ok) { showMsg("error", d.detail || "Restore failed."); }
-      else {
-        showMsg("success", `Restore complete — ${d.employees} employees, ${d.employers} employers, ${d.users} users restored.`);
+      if (!res.ok) {
+        setRestoreResult({ ok: false, text: d.detail || "Restore failed." });
+      } else {
+        setRestoreResult({ ok: true, text: `Restore complete — ${d.employees} employees, ${d.employers} employers, ${d.users} users restored.` });
         refetchStats();
+        setTimeout(() => { setConfirmRestore(null); setRestoreResult(null); }, 3000);
       }
-    } catch (e) { showMsg("error", e.message); }
-    finally { setRestoreLoading(false); setConfirmRestore(null); }
+    } catch (e) {
+      setRestoreResult({ ok: false, text: e.message || "Network error — restore may have failed." });
+    } finally {
+      setRestoreLoading(false);
+    }
   };
 
   const handleArchiveLogs = async () => {
@@ -4434,15 +4441,28 @@ const SettingsTab = () => {
                 </div>
               ))}
             </div>
+            {restoreResult && (
+              <div style={{
+                marginBottom: 16, padding: "12px 14px", borderRadius: 8,
+                background: restoreResult.ok ? "#f0fdf4" : "#fef2f2",
+                border: `1px solid ${restoreResult.ok ? "#bbf7d0" : "#fecaca"}`,
+                color: restoreResult.ok ? "#16a34a" : "#dc2626",
+                fontFamily: C.sans, fontSize: 13, fontWeight: 500,
+              }}>
+                {restoreResult.ok ? "✓" : "⚠"} {restoreResult.text}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmRestore(null)} disabled={restoreLoading}
+              <button onClick={() => { setConfirmRestore(null); setRestoreResult(null); }} disabled={restoreLoading}
                 style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "none", color: C.textSub, fontFamily: C.sans, fontSize: 13, cursor: "pointer" }}>
-                Cancel
+                {restoreResult?.ok ? "Close" : "Cancel"}
               </button>
-              <button onClick={handleRestore} disabled={restoreLoading}
-                style={{ padding: "8px 20px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontFamily: C.sans, fontSize: 13, fontWeight: 700, cursor: restoreLoading ? "not-allowed" : "pointer", opacity: restoreLoading ? 0.7 : 1 }}>
-                {restoreLoading ? "Restoring…" : "Yes, Restore Now"}
-              </button>
+              {!restoreResult?.ok && (
+                <button onClick={handleRestore} disabled={restoreLoading}
+                  style={{ padding: "8px 20px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#fff", fontFamily: C.sans, fontSize: 13, fontWeight: 700, cursor: restoreLoading ? "not-allowed" : "pointer", opacity: restoreLoading ? 0.7 : 1 }}>
+                  {restoreLoading ? "Restoring…" : "Yes, Restore Now"}
+                </button>
+              )}
             </div>
           </div>
         </div>
