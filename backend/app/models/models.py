@@ -155,3 +155,22 @@ class InvoiceRecord(Base):
     config_json        = Column(Text)   # JSON string — invoice config (months, rate, etc.)
     created_by   = Column(String(100))
     created_at   = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class BrandingSetting(Base):
+    """Single-row table (id=1) storing invoice branding shared across all devices."""
+    __tablename__ = "branding_settings"
+
+    id         = Column(Integer, primary_key=True, default=1)
+    co_name    = Column(Text, default="")
+    co_address = Column(Text, default="")
+    co_phone   = Column(Text, default="")
+    co_email   = Column(Text, default="")
+    co_reg     = Column(Text, default="")
+    co_logo    = Column(Text, default="")   # base64 data URL
+    logo_w     = Column(Float, default=28.0)
+    logo_h     = Column(Float, default=20.0)
+    stamp      = Column(Text, default="")   # base64 data URL
+    stamp_w    = Column(Float, default=30.0)
+    stamp_h    = Column(Float, default=30.0)
+    sig        = Column(Text, default="")   # base64 data URL

@@ -3993,41 +3993,88 @@ const SettingsTab = () => {
   const [restoreResult,  setRestoreResult]  = useState(null); // { ok: bool, text: string }
   const [archiving, setArchiving]           = useState(false);
 
-  // Invoice branding state (persisted in localStorage)
-  const [coName,    setCoName]    = useState(() => localStorage.getItem("inv_co_name")    || "");
-  const [coAddress, setCoAddress] = useState(() => localStorage.getItem("inv_co_address") || "");
-  const [coPhone,   setCoPhone]   = useState(() => localStorage.getItem("inv_co_phone")   || "");
-  const [coEmail,   setCoEmail]   = useState(() => localStorage.getItem("inv_co_email")   || "");
-  const [coReg,     setCoReg]     = useState(() => localStorage.getItem("inv_co_reg")     || "");
-  const [coLogo,    setCoLogo]    = useState(() => localStorage.getItem("inv_co_logo")    || "");
-  const [logoW,     setLogoW]     = useState(() => Number(localStorage.getItem("inv_logo_w"))  || 28);
-  const [logoH,     setLogoH]     = useState(() => Number(localStorage.getItem("inv_logo_h"))  || 20);
-  const [stamp,     setStamp]     = useState(() => localStorage.getItem("inv_stamp")      || "");
-  const [stampW,    setStampW]    = useState(() => Number(localStorage.getItem("inv_stamp_w")) || 30);
-  const [stampH,    setStampH]    = useState(() => Number(localStorage.getItem("inv_stamp_h")) || 30);
-  const [sig,       setSig]       = useState(() => localStorage.getItem("inv_sig")        || "");
+  // Invoice branding state (synced with server)
+  const [coName,    setCoName]    = useState("");
+  const [coAddress, setCoAddress] = useState("");
+  const [coPhone,   setCoPhone]   = useState("");
+  const [coEmail,   setCoEmail]   = useState("");
+  const [coReg,     setCoReg]     = useState("");
+  const [coLogo,    setCoLogo]    = useState("");
+  const [logoW,     setLogoW]     = useState(28);
+  const [logoH,     setLogoH]     = useState(20);
+  const [stamp,     setStamp]     = useState("");
+  const [stampW,    setStampW]    = useState(30);
+  const [stampH,    setStampH]    = useState(30);
+  const [sig,       setSig]       = useState("");
   const [brandSaved, setBrandSaved] = useState(false);
+
+  // Load branding from server on mount and sync to localStorage for PDF builder
+  useEffect(() => {
+    apiFetch(`${API}/branding/`)
+      .then(r => r.json())
+      .then(d => {
+        setCoName(d.co_name || ""); setCoAddress(d.co_address || "");
+        setCoPhone(d.co_phone || ""); setCoEmail(d.co_email || "");
+        setCoReg(d.co_reg || ""); setCoLogo(d.co_logo || "");
+        setLogoW(d.logo_w || 28); setLogoH(d.logo_h || 20);
+        setStamp(d.stamp || ""); setStampW(d.stamp_w || 30); setStampH(d.stamp_h || 30);
+        setSig(d.sig || "");
+        // Keep localStorage in sync for buildPDFDoc
+        localStorage.setItem("inv_co_name",    d.co_name    || "");
+        localStorage.setItem("inv_co_address", d.co_address || "");
+        localStorage.setItem("inv_co_phone",   d.co_phone   || "");
+        localStorage.setItem("inv_co_email",   d.co_email   || "");
+        localStorage.setItem("inv_co_reg",     d.co_reg     || "");
+        localStorage.setItem("inv_co_logo",    d.co_logo    || "");
+        localStorage.setItem("inv_logo_w",     String(d.logo_w  || 28));
+        localStorage.setItem("inv_logo_h",     String(d.logo_h  || 20));
+        localStorage.setItem("inv_stamp",      d.stamp      || "");
+        localStorage.setItem("inv_stamp_w",    String(d.stamp_w || 30));
+        localStorage.setItem("inv_stamp_h",    String(d.stamp_h || 30));
+        localStorage.setItem("inv_sig",        d.sig        || "");
+      })
+      .catch(() => {});
+  }, []);
 
   const handleImgUpload = (key, setter) => e => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => { localStorage.setItem(key, ev.target.result); setter(ev.target.result); };
+    reader.onload = ev => { setter(ev.target.result); };
     reader.readAsDataURL(file);
   };
-  const clearImg = (key, setter) => { localStorage.removeItem(key); setter(""); };
-  const saveBranding = () => {
-    localStorage.setItem("inv_co_name",    coName);
-    localStorage.setItem("inv_co_address", coAddress);
-    localStorage.setItem("inv_co_phone",   coPhone);
-    localStorage.setItem("inv_co_email",   coEmail);
-    localStorage.setItem("inv_co_reg",     coReg);
-    localStorage.setItem("inv_logo_w",     String(logoW));
-    localStorage.setItem("inv_logo_h",     String(logoH));
-    localStorage.setItem("inv_stamp_w",    String(stampW));
-    localStorage.setItem("inv_stamp_h",    String(stampH));
-    setBrandSaved(true);
-    setTimeout(() => setBrandSaved(false), 2500);
+  const clearImg = (key, setter) => { setter(""); };
+  const saveBranding = async () => {
+    const payload = {
+      co_name: coName, co_address: coAddress, co_phone: coPhone,
+      co_email: coEmail, co_reg: coReg, co_logo: coLogo,
+      logo_w: logoW, logo_h: logoH,
+      stamp, stamp_w: stampW, stamp_h: stampH, sig,
+    };
+    try {
+      const res = await apiFetch(`${API}/branding/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        // Keep localStorage in sync for buildPDFDoc
+        localStorage.setItem("inv_co_name",    coName);
+        localStorage.setItem("inv_co_address", coAddress);
+        localStorage.setItem("inv_co_phone",   coPhone);
+        localStorage.setItem("inv_co_email",   coEmail);
+        localStorage.setItem("inv_co_reg",     coReg);
+        localStorage.setItem("inv_co_logo",    coLogo);
+        localStorage.setItem("inv_logo_w",     String(logoW));
+        localStorage.setItem("inv_logo_h",     String(logoH));
+        localStorage.setItem("inv_stamp",      stamp);
+        localStorage.setItem("inv_stamp_w",    String(stampW));
+        localStorage.setItem("inv_stamp_h",    String(stampH));
+        localStorage.setItem("inv_sig",        sig);
+        setBrandSaved(true);
+        setTimeout(() => setBrandSaved(false), 2500);
+      }
+    } catch {}
   };
 
   const showMsg = (type, text) => {
