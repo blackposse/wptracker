@@ -4580,10 +4580,14 @@ const InvoiceTab = ({ isAdmin }) => {
   const [employerId, setEmployerId]           = useState("");
   const [employees, setEmployees]             = useState([]);
   const [loadingEmps, setLoadingEmps]         = useState(false);
-  const [invoiceType, setInvoiceType]         = useState("wpf");    // "wpf" | "insurance" | "quota" | "combined"
+  const [invoiceType, setInvoiceType]         = useState("wpf");    // "wpf" | "insurance" | "quota" | "medical" | "photo" | "combined"
   const [combineWpf, setCombineWpf]           = useState(true);
   const [combineInsurance, setCombineInsurance] = useState(true);
   const [combineQuota, setCombineQuota]       = useState(true);
+  const [combineMedical, setCombineMedical]   = useState(false);
+  const [combinePhoto, setCombinePhoto]       = useState(false);
+  const [medicalRate, setMedicalRate]         = useState(450);
+  const [photoRate, setPhotoRate]             = useState(50);
   const [rate, setRate]                       = useState(350);
   const [months, setMonths]                   = useState(3);
   const [quotaMode, setQuotaMode]             = useState("annual"); // "annual" | "monthly"
@@ -4692,7 +4696,9 @@ const InvoiceTab = ({ isAdmin }) => {
     if (invoiceType === "wpf")       return months * rate;
     if (invoiceType === "insurance") return 800;
     if (invoiceType === "quota")     return quotaPerEmp;
-    if (invoiceType === "combined")  return (combineWpf ? months * rate : 0) + (combineInsurance ? 800 : 0) + (combineQuota ? quotaPerEmp : 0);
+    if (invoiceType === "medical")   return medicalRate;
+    if (invoiceType === "photo")     return photoRate;
+    if (invoiceType === "combined")  return (combineWpf ? months * rate : 0) + (combineInsurance ? 800 : 0) + (combineQuota ? quotaPerEmp : 0) + (combineMedical ? medicalRate : 0) + (combinePhoto ? photoRate : 0);
     return 0;
   })();
   const subtotal     = selectedEmployees.length * perEmp;
@@ -4794,8 +4800,12 @@ const InvoiceTab = ({ isAdmin }) => {
       doc.text(`Rate: MVR ${Number(rt).toFixed(2)} / employee / month   |   Coverage: ${mo} month${mo>1?"s":""} from each employee's WPF expiry date`, M, y);
     } else if (iType === "insurance") {
       doc.text("Annual insurance fee: MVR 800.00 per employee", M, y);
+    } else if (iType === "medical") {
+      doc.text(`Annual medical fee: MVR ${cfg.medicalRate||450} per employee`, M, y);
+    } else if (iType === "photo") {
+      doc.text(`Photo fee: MVR ${cfg.photoRate||50} per employee`, M, y);
     } else if (iType === "combined") {
-      const parts = [cwpf && "WPF", cins && "Insurance", cquota && "Quota Slot"].filter(Boolean);
+      const parts = [cwpf && "WPF", cins && "Insurance", cquota && "Quota Slot", cfg.combineMedical && "Medical", cfg.combinePhoto && "Photo"].filter(Boolean);
       doc.text(`Combined invoice — ${parts.join(" + ")}   |   ${n} employee${n !== 1 ? "s" : ""}`, M, y);
     } else if (qMode === "annual") {
       doc.text("Annual quota slot fee: MVR 2,000.00 per slot", M, y);
@@ -4848,6 +4858,27 @@ const InvoiceTab = ({ isAdmin }) => {
         3: { cellWidth: 26, halign: "center" }, 4: { cellWidth: 52 },
         5: { cellWidth: 18, halign: "right", fontStyle: "bold" },
       };
+    } else if (iType === "medical") {
+      tableHead = [["#", "Employee Name", "WP Number", "Medical Expiry", "Amount (MVR)"]];
+      tableBody = emps.map((emp, i) => [
+        String(i + 1), emp.full_name, emp.work_permit_number || "—",
+        emp.medical_expiry || "—", fmtAmt(cfg.medicalRate || 450),
+      ]);
+      colStyles = {
+        0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 52 }, 2: { cellWidth: 26 },
+        3: { cellWidth: 30, halign: "center" },
+        4: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+      };
+    } else if (iType === "photo") {
+      tableHead = [["#", "Employee Name", "WP Number", "Amount (MVR)"]];
+      tableBody = emps.map((emp, i) => [
+        String(i + 1), emp.full_name, emp.work_permit_number || "—",
+        fmtAmt(cfg.photoRate || 50),
+      ]);
+      colStyles = {
+        0: { cellWidth: 10, halign: "center" }, 1: { cellWidth: 80 }, 2: { cellWidth: 46 },
+        3: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+      };
     } else {
       const modeLabel = qMode === "annual" ? "Annual" : `${qMo} mo.${qFirst ? " (1st incl.)" : ""}`;
       tableHead = [["#", "Employee Name", "WP Number", "Quota Slot No.", "Payment Mode", "Amount (MVR)"]];
@@ -4864,7 +4895,8 @@ const InvoiceTab = ({ isAdmin }) => {
 
     if (iType === "combined") {
       let secIndex = 0;
-      const sections = [cwpf && "wpf", cins && "insurance", cquota && "quota"].filter(Boolean);
+      const cmed = cfg.combineMedical; const cphoto = cfg.combinePhoto;
+      const sections = [cwpf && "wpf", cins && "insurance", cquota && "quota", cmed && "medical", cphoto && "photo"].filter(Boolean);
       for (const sec of sections) {
         secIndex++;
         const letter = String.fromCharCode(64 + secIndex);
@@ -4886,6 +4918,26 @@ const InvoiceTab = ({ isAdmin }) => {
             body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.insurance_expiry||"—", fmtAmt(800)]),
             styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
             columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:120},2:{cellWidth:26,halign:"center"},3:{cellWidth:18,halign:"right",fontStyle:"bold"} },
+            margin: { left: M, right: M },
+          });
+        } else if (sec === "medical") {
+          drawSectionLabel(`SECTION ${letter}  —  MEDICAL`);
+          autoTable(doc, {
+            startY: y,
+            head: [["#", "Employee Name", "Medical Expiry", "Amount (MVR)"]],
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, emp.medical_expiry||"—", fmtAmt(cfg.medicalRate||450)]),
+            styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
+            columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:110},2:{cellWidth:30,halign:"center"},3:{cellWidth:18,halign:"right",fontStyle:"bold"} },
+            margin: { left: M, right: M },
+          });
+        } else if (sec === "photo") {
+          drawSectionLabel(`SECTION ${letter}  —  PHOTO`);
+          autoTable(doc, {
+            startY: y,
+            head: [["#", "Employee Name", "Amount (MVR)"]],
+            body: emps.map((emp, i) => [String(i+1), emp.full_name, fmtAmt(cfg.photoRate||50)]),
+            styles: subTableStyles, headStyles: subHeadStyles, alternateRowStyles: subAltStyles,
+            columnStyles: { 0:{cellWidth:10,halign:"center"},1:{cellWidth:140},2:{cellWidth:18,halign:"right",fontStyle:"bold"} },
             margin: { left: M, right: M },
           });
         } else {
@@ -4925,10 +4977,16 @@ const InvoiceTab = ({ isAdmin }) => {
 
     const fmtMVR = (val) => `MVR ${fmtAmt(val)}`;
 
-    if (iType === "combined") {
+    if (iType === "medical") {
+      drawRow(`Medical: ${n} emp x MVR ${cfg.medicalRate||450}`, fmtMVR(n*(cfg.medicalRate||450)), [248,250,252],[15,23,42],false,8);
+    } else if (iType === "photo") {
+      drawRow(`Photo: ${n} emp x MVR ${cfg.photoRate||50}`, fmtMVR(n*(cfg.photoRate||50)), [248,250,252],[15,23,42],false,8);
+    } else if (iType === "combined") {
       if (cwpf)  drawRow(`WPF: ${n} emp x ${mo}mo x MVR ${rt}`, fmtMVR(n*mo*rt), [248,250,252],[15,23,42],false,8);
       if (cins)  drawRow(`Insurance: ${n} emp x MVR 800`, fmtMVR(n*800), [248,250,252],[15,23,42],false,8);
       if (cquota) drawRow(`Quota: ${n} x MVR ${qPerEmp.toFixed(2)}`, fmtMVR(n*qPerEmp), [248,250,252],[15,23,42],false,8);
+      if (cmed)  drawRow(`Medical: ${n} emp x MVR ${cfg.medicalRate||450}`, fmtMVR(n*(cfg.medicalRate||450)), [248,250,252],[15,23,42],false,8);
+      if (cphoto) drawRow(`Photo: ${n} emp x MVR ${cfg.photoRate||50}`, fmtMVR(n*(cfg.photoRate||50)), [248,250,252],[15,23,42],false,8);
     } else {
       let subtotalLabel;
       if (iType === "wpf") subtotalLabel = `WPF: ${n} emp x ${mo} mo x MVR ${rt}`;
@@ -4993,7 +5051,7 @@ const InvoiceTab = ({ isAdmin }) => {
       invNumber: invoiceNumber, invDate: invoiceDate,
       employerName: selectedEmployer?.name || "—",
       invoiceType, emps: empSnap,
-      cfg: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
+      cfg: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto },
       cwpf: combineWpf, cins: combineInsurance, cquota: combineQuota,
       notesText: notes, gtotal: grandTotal,
     };
@@ -5012,7 +5070,7 @@ const InvoiceTab = ({ isAdmin }) => {
           grandTotal,
           combineWpf, combineInsurance, combineQuota,
           notes, employees: empSnap,
-          config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt },
+          config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto },
         }),
       });
       if (res.ok) {
@@ -5194,6 +5252,8 @@ const InvoiceTab = ({ isAdmin }) => {
                     <option value="wpf">Work Permit Fee</option>
                     <option value="insurance">Insurance</option>
                     <option value="quota">Quota Slot Fee</option>
+                    <option value="medical">Medical</option>
+                    <option value="photo">Photo</option>
                     <option value="combined">Combined (All Types)</option>
                   </select>
                 </div>
@@ -5219,6 +5279,18 @@ const InvoiceTab = ({ isAdmin }) => {
                         {[1,2,3,4,5,6,9,12].map(m => <option key={m} value={m}>{m} mo</option>)}
                       </select>
                     </div>
+                  </div>
+                )}
+                {invoiceType === "medical" && (
+                  <div>
+                    <label style={lbSt}>Medical Rate (MVR)</label>
+                    <input type="number" value={medicalRate} onChange={e => setMedicalRate(Number(e.target.value))} min={1} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                )}
+                {invoiceType === "photo" && (
+                  <div>
+                    <label style={lbSt}>Photo Rate (MVR)</label>
+                    <input type="number" value={photoRate} onChange={e => setPhotoRate(Number(e.target.value))} min={1} style={{ ...inSt, width: "100%", boxSizing: "border-box" }} />
                   </div>
                 )}
                 {invoiceType === "quota" && <>
@@ -5253,6 +5325,8 @@ const InvoiceTab = ({ isAdmin }) => {
                       ["wpf", "Work Permit Fee", combineWpf, setCombineWpf],
                       ["insurance", "Insurance (MVR 800/yr)", combineInsurance, setCombineInsurance],
                       ["quota", "Quota Slot Fee", combineQuota, setCombineQuota],
+                      ["medical", `Medical (MVR ${medicalRate}/yr)`, combineMedical, setCombineMedical],
+                      ["photo", `Photo (MVR ${photoRate})`, combinePhoto, setCombinePhoto],
                     ].map(([key, label, checked, setter]) => (
                       <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: C.sans, fontSize: 13, color: C.text, userSelect: "none", marginBottom: 8 }}>
                         <input type="checkbox" checked={checked} onChange={e => setter(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.accent }} />
@@ -5334,12 +5408,18 @@ const InvoiceTab = ({ isAdmin }) => {
                       ? [["Rate", `MVR ${Number(rate).toFixed(2)} / mo`], ["Months", `${months}`]]
                       : invoiceType === "insurance"
                       ? [["Rate", "MVR 800.00 / yr"]]
+                      : invoiceType === "medical"
+                      ? [["Rate", `MVR ${medicalRate.toFixed(2)} / yr`]]
+                      : invoiceType === "photo"
+                      ? [["Rate", `MVR ${photoRate.toFixed(2)}`]]
                       : invoiceType === "quota"
                       ? (quotaMode === "annual" ? [["Rate", "MVR 2,000 / yr"]] : [["Months", `${quotaMonths}`], ["Per Slot", `MVR ${quotaPerEmp.toFixed(2)}`]])
                       : [
                           ...(combineWpf       ? [["WPF", `${selectedIds.size} x MVR ${(months * rate).toFixed(2)}`]] : []),
                           ...(combineInsurance ? [["Insurance", `${selectedIds.size} x MVR 800.00`]] : []),
                           ...(combineQuota     ? [["Quota", `${selectedIds.size} x MVR ${quotaPerEmp.toFixed(2)}`]] : []),
+                          ...(combineMedical   ? [["Medical", `${selectedIds.size} x MVR ${medicalRate.toFixed(2)}`]] : []),
+                          ...(combinePhoto     ? [["Photo", `${selectedIds.size} x MVR ${photoRate.toFixed(2)}`]] : []),
                         ]),
                     ["Subtotal", `MVR ${subtotal.toFixed(2)}`],
                     ...(includeAgencyFee ? [["Agency Fee", `MVR ${agencyFeeAmt.toFixed(2)}`]] : []),
@@ -5408,9 +5488,13 @@ const InvoiceTab = ({ isAdmin }) => {
                           ? ["Employee","WP Number","WPF Expiry","Status","Overdue","Coverage Period","Months","Amount (MVR)"]
                           : invoiceType === "insurance"
                           ? ["Employee","WP Number","Insurance Expiry","Coverage Period","Amount (MVR)"]
+                          : invoiceType === "medical"
+                          ? ["Employee","WP Number","Medical Expiry","Amount (MVR)"]
+                          : invoiceType === "photo"
+                          ? ["Employee","WP Number","Amount (MVR)"]
                           : invoiceType === "quota"
                           ? ["Employee","WP Number","Quota Slot No.","Amount (MVR)"]
-                          : ["Employee","WP Number",...(combineWpf?["WPF (MVR)"]:[]),...(combineInsurance?["Insurance (MVR)"]:[]),...(combineQuota?["Quota (MVR)"]:[]),"Total (MVR)"]
+                          : ["Employee","WP Number",...(combineWpf?["WPF (MVR)"]:[]),...(combineInsurance?["Insurance (MVR)"]:[]),...(combineQuota?["Quota (MVR)"]:[]),...(combineMedical?["Medical (MVR)"]:[]),...(combinePhoto?["Photo (MVR)"]:[]),"Total (MVR)"]
                         ).map(h => (
                           <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, color: C.textSub, fontSize: 10, borderBottom: `1px solid ${C.border}`, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
@@ -5455,6 +5539,13 @@ const InvoiceTab = ({ isAdmin }) => {
                               </td>
                               <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>800.00</td>
                             </>}
+                            {invoiceType === "medical" && <>
+                              <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.medical_expiry || <span style={{ color: C.textMuted }}>—</span>}</td>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{medicalRate.toFixed(2)}</td>
+                            </>}
+                            {invoiceType === "photo" && <>
+                              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{photoRate.toFixed(2)}</td>
+                            </>}
                             {invoiceType === "quota" && <>
                               <td style={{ padding: "10px 12px", fontFamily: C.mono, fontSize: 11, color: C.textSub }}>{emp.quota_slot_number || <span style={{ color: C.textMuted }}>—</span>}</td>
                               <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{perEmp.toFixed(2)}</td>
@@ -5463,6 +5554,8 @@ const InvoiceTab = ({ isAdmin }) => {
                               {combineWpf       && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{(months * rate).toFixed(2)}</td>}
                               {combineInsurance && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>800.00</td>}
                               {combineQuota     && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{quotaPerEmp.toFixed(2)}</td>}
+                              {combineMedical   && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{medicalRate.toFixed(2)}</td>}
+                              {combinePhoto     && <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, color: C.textSub }}>{photoRate.toFixed(2)}</td>}
                               <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: C.mono, fontWeight: 700, color: C.text }}>{perEmp.toFixed(2)}</td>
                             </>}
                           </tr>
@@ -5498,6 +5591,8 @@ const InvoiceTab = ({ isAdmin }) => {
               <option value="wpf">Work Permit Fee</option>
               <option value="insurance">Insurance</option>
               <option value="quota">Quota Slot</option>
+              <option value="medical">Medical</option>
+              <option value="photo">Photo</option>
               <option value="combined">Combined</option>
             </select>
             {isAdmin && (
