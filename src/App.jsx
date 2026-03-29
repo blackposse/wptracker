@@ -4589,6 +4589,7 @@ const InvoiceTab = ({ isAdmin }) => {
   const [medicalRate, setMedicalRate]         = useState(450);
   const [photoRate, setPhotoRate]             = useState(50);
   const [customLines, setCustomLines]         = useState([{ description: "", amount: "" }]);
+  const [customGstEnabled, setCustomGstEnabled] = useState(false);
   const [rate, setRate]                       = useState(350);
   const [months, setMonths]                   = useState(3);
   const [quotaMode, setQuotaMode]             = useState("annual"); // "annual" | "monthly"
@@ -4706,8 +4707,9 @@ const InvoiceTab = ({ isAdmin }) => {
   const subtotal = invoiceType === "custom"
     ? customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0)
     : selectedEmployees.length * perEmp;
-  const agencyFeeAmt = includeAgencyFee ? (parseFloat(agencyFee) || 0) : 0;
-  const grandTotal   = subtotal + agencyFeeAmt;
+  const agencyFeeAmt  = includeAgencyFee ? (parseFloat(agencyFee) || 0) : 0;
+  const customGstVal  = invoiceType === "custom" && customGstEnabled ? subtotal * 0.08 : 0;
+  const grandTotal    = subtotal + agencyFeeAmt + customGstVal;
 
   // ── Shared PDF builder (used by both generate and replay) ──
   const buildPDFDoc = (ctx) => {
@@ -5013,9 +5015,11 @@ const InvoiceTab = ({ isAdmin }) => {
     } else if (iType === "photo") {
       drawRow(`Photo: ${n} emp x MVR ${cfg.photoRate||50}`, fmtMVR(n*(cfg.photoRate||50)), [248,250,252],[15,23,42],false,8);
     } else if (iType === "custom") {
-      for (const line of cLines) {
-        const amt = parseFloat(line.amount) || 0;
-        drawRow(line.description || "—", fmtMVR(amt), [248,250,252],[15,23,42],false,8);
+      const cSubtotal = cLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+      if (cfg.customGstEnabled) {
+        const cGst = cSubtotal * 0.08;
+        drawRow("Subtotal", fmtMVR(cSubtotal), [248,250,252],[15,23,42],false,8);
+        drawRow("GST (8%)", fmtMVR(cGst), [248,250,252],[15,23,42],false,8);
       }
     } else if (iType === "combined") {
       if (cwpf)  drawRow(`WPF: ${n} emp x ${mo}mo x MVR ${rt}`, fmtMVR(n*mo*rt), [248,250,252],[15,23,42],false,8);
@@ -5087,7 +5091,7 @@ const InvoiceTab = ({ isAdmin }) => {
       invNumber: invoiceNumber, invDate: invoiceDate,
       employerName: selectedEmployer?.name || "—",
       invoiceType, emps: empSnap,
-      cfg: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto, customLines },
+      cfg: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto, customLines, customGstEnabled },
       cwpf: combineWpf, cins: combineInsurance, cquota: combineQuota,
       notesText: notes, gtotal: grandTotal,
     };
@@ -5106,7 +5110,7 @@ const InvoiceTab = ({ isAdmin }) => {
           grandTotal,
           combineWpf, combineInsurance, combineQuota,
           notes, employees: empSnap,
-          config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto, customLines },
+          config: { months, rate, quotaMode, quotaMonths, quotaFirstMonth, includeAgencyFee, agencyFeeAmt: afAmt, medicalRate, photoRate, combineMedical, combinePhoto, customLines, customGstEnabled },
         }),
       });
       if (res.ok) {
@@ -5311,14 +5315,34 @@ const InvoiceTab = ({ isAdmin }) => {
                 style={{ marginTop: 4, padding: "9px 18px", border: `1.5px dashed ${C.border}`, borderRadius: 8, background: "transparent", color: C.textSub, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%" }}>
                 + Add Line Item
               </button>
+
+              {/* GST row */}
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", fontFamily: C.sans, fontSize: 13, color: C.text, fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={customGstEnabled}
+                    onChange={e => setCustomGstEnabled(e.target.checked)}
+                    style={{ accentColor: C.accent, width: 16, height: 16, cursor: "pointer" }}
+                  />
+                  Include GST
+                </label>
+                {customGstEnabled && (
+                  <span style={{ fontFamily: C.sans, fontSize: 12, color: C.textSub }}>
+                    8% → <span style={{ fontFamily: C.mono, color: C.text, fontWeight: 600 }}>
+                      MVR {(customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0) * 0.08).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Footer — total + confirm */}
             <div style={{ padding: "16px 28px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
               <div style={{ fontFamily: C.sans }}>
-                <span style={{ fontSize: 11, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Total</span>
+                <span style={{ fontSize: 11, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Total {customGstEnabled ? "(incl. GST)" : ""}</span>
                 <div style={{ fontSize: 22, fontWeight: 700, color: C.accent, fontFamily: C.mono, marginTop: 2 }}>
-                  MVR {customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  MVR {(() => { const base = customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0); return (base + (customGstEnabled ? base * 0.08 : 0)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); })()}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
@@ -5581,6 +5605,7 @@ const InvoiceTab = ({ isAdmin }) => {
                         ]),
                     ["Subtotal", `MVR ${subtotal.toFixed(2)}`],
                     ...(includeAgencyFee ? [["Agency Fee", `MVR ${agencyFeeAmt.toFixed(2)}`]] : []),
+                    ...(invoiceType === "custom" && customGstEnabled ? [["GST (8%)", `MVR ${customGstVal.toFixed(2)}`]] : []),
                   ].map(([lbl, val]) => (
                     <div key={lbl} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.borderLight}`, fontFamily: C.sans, fontSize: 12 }}>
                       <span style={{ color: C.textSub }}>{lbl}</span>
