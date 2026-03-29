@@ -4612,6 +4612,7 @@ const InvoiceTab = ({ isAdmin }) => {
   const [markPaidConfirm, setMarkPaidConfirm] = useState(null);
   const [markPaidLoading, setMarkPaidLoading] = useState(false);
   const [markPaidError, setMarkPaidError]     = useState(null);
+  const [showCustomModal, setShowCustomModal] = useState(false);
 
   // Load invoice history from server and fetch next invoice number
   const loadHistory = () => {
@@ -5245,6 +5246,96 @@ const InvoiceTab = ({ isAdmin }) => {
   return (
     <div style={{ maxWidth: 1400, margin: "0 auto" }}>
 
+      {/* ── Custom Invoice Modal ── */}
+      {showCustomModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 24,
+        }} onClick={e => { if (e.target === e.currentTarget) setShowCustomModal(false); }}>
+          <div style={{
+            background: C.cardBg, borderRadius: 16, width: "100%", maxWidth: 760,
+            maxHeight: "90vh", display: "flex", flexDirection: "column",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.25)",
+            border: `1px solid ${C.border}`,
+          }}>
+            {/* Modal header */}
+            <div style={{ padding: "20px 28px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <div>
+                <div style={{ fontFamily: C.sans, fontSize: 16, fontWeight: 700, color: C.text }}>Custom Invoice — Line Items</div>
+                <div style={{ fontFamily: C.sans, fontSize: 12, color: C.textSub, marginTop: 3 }}>Add descriptions and amounts for each line item on the invoice.</div>
+              </div>
+              <button onClick={() => setShowCustomModal(false)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, width: 34, height: 34, cursor: "pointer", fontSize: 18, color: C.textSub, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
+            </div>
+
+            {/* Table header */}
+            <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 44px", gap: 10, padding: "12px 28px 8px", borderBottom: `1px solid ${C.borderLight}`, flexShrink: 0 }}>
+              <span style={{ fontFamily: C.sans, fontSize: 10, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", paddingTop: 2 }}>#</span>
+              <span style={{ fontFamily: C.sans, fontSize: 10, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Description</span>
+              <span style={{ fontFamily: C.sans, fontSize: 10, fontWeight: 600, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Amount (MVR)</span>
+              <span />
+            </div>
+
+            {/* Line items */}
+            <div style={{ overflowY: "auto", flex: 1, padding: "12px 28px" }}>
+              {customLines.map((line, idx) => (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "32px 1fr 160px 44px", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <span style={{ fontFamily: C.mono, fontSize: 12, color: C.textMuted, textAlign: "center" }}>{idx + 1}</span>
+                  <input
+                    placeholder={`e.g. Work permit renewal fee`}
+                    value={line.description}
+                    onChange={e => setCustomLines(prev => prev.map((l, i) => i === idx ? { ...l, description: e.target.value } : l))}
+                    style={{ ...inSt, width: "100%", boxSizing: "border-box" }}
+                    autoFocus={idx === customLines.length - 1 && customLines.length > 1}
+                  />
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={line.amount}
+                    onChange={e => setCustomLines(prev => prev.map((l, i) => i === idx ? { ...l, amount: e.target.value } : l))}
+                    min={0}
+                    step="0.01"
+                    style={{ ...inSt, width: "100%", boxSizing: "border-box", fontFamily: C.mono }}
+                  />
+                  <button
+                    onClick={() => setCustomLines(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)}
+                    disabled={customLines.length === 1}
+                    style={{ background: "none", border: `1px solid ${customLines.length === 1 ? C.borderLight : "#fca5a5"}`, color: customLines.length === 1 ? C.textMuted : "#b91c1c", borderRadius: 7, width: 36, height: 36, cursor: customLines.length === 1 ? "default" : "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setCustomLines(prev => [...prev, { description: "", amount: "" }])}
+                style={{ marginTop: 4, padding: "9px 18px", border: `1.5px dashed ${C.border}`, borderRadius: 8, background: "transparent", color: C.textSub, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+                + Add Line Item
+              </button>
+            </div>
+
+            {/* Footer — total + confirm */}
+            <div style={{ padding: "16px 28px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div style={{ fontFamily: C.sans }}>
+                <span style={{ fontSize: 11, color: C.textSub, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Total</span>
+                <div style={{ fontSize: 22, fontWeight: 700, color: C.accent, fontFamily: C.mono, marginTop: 2 }}>
+                  MVR {customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setShowCustomModal(false)} style={{ padding: "10px 24px", border: `1px solid ${C.border}`, borderRadius: 9, background: "transparent", color: C.textSub, fontFamily: C.sans, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setShowCustomModal(false)}
+                  style={{ padding: "10px 28px", border: "none", borderRadius: 9, background: C.accent, color: "#fff", fontFamily: C.sans, fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: `0 4px 14px ${C.accent}40` }}>
+                  Confirm Line Items
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Sub-tab toggle ── */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 4, width: "fit-content" }}>
         {[["generate","New Invoice"],["history","History"]].map(([key, label]) => (
@@ -5331,42 +5422,31 @@ const InvoiceTab = ({ isAdmin }) => {
                 )}
                 {invoiceType === "custom" && (
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                      <label style={lbSt}>Line Items</label>
-                      <button
-                        onClick={() => setCustomLines(prev => [...prev, { description: "", amount: "" }])}
-                        style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", fontFamily: C.sans, fontWeight: 600 }}>
-                        + Add Line
-                      </button>
-                    </div>
-                    {customLines.map((line, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                        <input
-                          placeholder={`Description ${idx + 1}`}
-                          value={line.description}
-                          onChange={e => setCustomLines(prev => prev.map((l, i) => i === idx ? { ...l, description: e.target.value } : l))}
-                          style={{ ...inSt, flex: 3, boxSizing: "border-box" }}
-                        />
-                        <input
-                          type="number"
-                          placeholder="Amount"
-                          value={line.amount}
-                          onChange={e => setCustomLines(prev => prev.map((l, i) => i === idx ? { ...l, amount: e.target.value } : l))}
-                          min={0}
-                          style={{ ...inSt, flex: 1, boxSizing: "border-box" }}
-                        />
-                        {customLines.length > 1 && (
-                          <button
-                            onClick={() => setCustomLines(prev => prev.filter((_, i) => i !== idx))}
-                            style={{ background: "none", border: `1px solid #fca5a5`, color: "#b91c1c", borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 16, lineHeight: 1, flexShrink: 0 }}>
-                            ×
-                          </button>
-                        )}
+                    <label style={lbSt}>Line Items</label>
+                    <button
+                      onClick={() => setShowCustomModal(true)}
+                      style={{
+                        width: "100%", padding: "10px 0", borderRadius: 8, border: `1.5px dashed ${C.accent}`,
+                        background: C.accentBg, color: C.accent, fontFamily: C.sans, fontSize: 13,
+                        fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center",
+                        justifyContent: "center", gap: 8,
+                      }}>
+                      ✎ Build Line Items
+                    </button>
+                    {customLines.some(l => l.description || l.amount) && (
+                      <div style={{ marginTop: 10, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        {customLines.filter(l => l.description || l.amount).map((l, i) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 12px", borderBottom: `1px solid ${C.borderLight}`, fontFamily: C.sans, fontSize: 12 }}>
+                            <span style={{ color: C.textSub }}>{l.description || `Line ${i + 1}`}</span>
+                            <span style={{ fontFamily: C.mono, color: C.text }}>MVR {(parseFloat(l.amount)||0).toLocaleString("en-US",{minimumFractionDigits:2})}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 12px", background: C.pageBg, fontFamily: C.sans, fontSize: 12, fontWeight: 700 }}>
+                          <span style={{ color: C.text }}>Total</span>
+                          <span style={{ fontFamily: C.mono, color: C.accent }}>MVR {customLines.reduce((s,l) => s+(parseFloat(l.amount)||0),0).toLocaleString("en-US",{minimumFractionDigits:2})}</span>
+                        </div>
                       </div>
-                    ))}
-                    <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.mono, marginTop: 6, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
-                      Total: MVR {customLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
+                    )}
                   </div>
                 )}
                 {invoiceType === "quota" && <>
